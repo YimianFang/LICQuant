@@ -18,7 +18,7 @@ def round_pass(x):
 
 class LSQPlus(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, x, scale, beta, lower_bound, upper_bound):
+    def forward(ctx, x, scale, beta, lower_bound, upper_bound, scale_per_channel, beta_per_channel):
         r"""
         LSQPlus: y = Round[clamp((x - beta)/s, n, p)] * s + beta
         Args:
@@ -30,7 +30,7 @@ class LSQPlus(torch.autograd.Function):
         """
         x_hat = ((x - beta) / scale).round()
         ctx.save_for_backward(x, x_hat, scale, beta)
-        ctx.constant = [lower_bound, upper_bound]
+        ctx.constant = [lower_bound, upper_bound, scale_per_channel, beta_per_channel]
         x_hat = x_hat.clamp(lower_bound, upper_bound)
         x_quant = x_hat * scale + beta
         return x_quant
@@ -45,7 +45,7 @@ class LSQPlus(torch.autograd.Function):
             beta_gradient: 0 or 1
         """
         x, x_hat, scale, beta = ctx.saved_variables
-        lower_bound, upper_bound = ctx.constant
+        lower_bound, upper_bound, scale_per_channel, beta_per_channel = ctx.constant
 
         r"""1. input gradient"""
         x_grad = torch.ones_like(grad_output)
@@ -57,13 +57,19 @@ class LSQPlus(torch.autograd.Function):
         scale_grad = -(x - beta)/scale + x_hat
         scale_grad[(x - beta)/scale <= lower_bound] = float(lower_bound)
         scale_grad[(x - beta)/scale >= upper_bound] = float(upper_bound)
-        scale_grad = (scale_grad * grad_output).sum().reshape_as(scale) / math.sqrt(x.numel() * upper_bound) 
+        if scale_per_channel:
+            scale_grad = (scale_grad * grad_output).sum(dim=list(range(1, x.dim())), keepdim=True) / math.sqrt(x.numel() * upper_bound) 
+        else:
+            scale_grad = (scale_grad * grad_output).sum().unsqueeze(dim=0) / math.sqrt(x.numel() * upper_bound) 
 
         r"""3. offset gradient"""
         beta_grad = torch.zeros_like(x)
         beta_grad[(x-beta)/scale <= lower_bound] = 1
         beta_grad[(x-beta)/scale >= upper_bound] = 1
-        beta_grad = (beta_grad * grad_output).sum().reshape_as(beta) / math.sqrt(x.numel() * upper_bound) 
+        if beta_per_channel:
+            beta_grad = (beta_grad * grad_output).sum(dim=list(range(1, x.dim())), keepdim=True) / math.sqrt(x.numel() * upper_bound) 
+        else:
+            beta_grad = (beta_grad * grad_output).sum().unsqueeze(dim=0) / math.sqrt(x.numel() * upper_bound) 
 
         return x_grad, scale_grad, beta_grad, None, None
 
@@ -110,9 +116,9 @@ procedure:
             padding=fpmodule.padding,
             dilation=fpmodule.dilation,
             groups=fpmodule.groups,
-            bias=fpmodule.bias,
         )
         self.weight = fpmodule.weight
+        self.bias = fpmodule.bias
         self.nbits_w = nbits_w
         self.nbits_a = nbits_a
         self.quant_activation = quant_activation
@@ -129,7 +135,7 @@ procedure:
         
         if self.per_channel == per_channel:
             self.weight_offset = Parameter(torch.Tensor(self.out_channels))
-            self.act_offset = Parameter(torch.Tensor(self.out_channels))
+            self.act_offset = Parameter(torch.Tensor(self.in_channels))
         else:
             self.weight_offset = Parameter(torch.Tensor(1))
             self.act_offset = Parameter(torch.Tensor(1))
@@ -163,8 +169,9 @@ procedure:
             self.running_weight_offset += \
                 self.momentum * (self.act_offset - self.running_act_offset).data
 
-    
-        x_q = LSQPlus.apply(x, self.act_alpha, self.act_offset, Qn, Qp)
+        x_q = LSQPlus.apply(x, self.act_alpha, self.act_offset.view(1, -1, 1, 1), Qn, Qp, 
+                            self.act_alpha.numel() > 1,
+                            self.act_offset.numel() > 1)
         return x_q
 
     def lsq_quantization_weight(self, weight):
@@ -194,7 +201,9 @@ procedure:
             weight_offset = grad_scale(self.weight_offset, g) if self.training else self.running_weight_offset
             w_q = round_pass((weight - weight_offset) / weight_alpha).clamp(Qn, Qp) * weight_alpha + weight_offset
         '''
-        w_q = LSQPlus.apply(weight, self.weight_alpha, self.weight_offset, Qn, Qp)
+        w_q = LSQPlus.apply(weight, self.weight_alpha.view(-1, 1, 1, 1), self.weight_offset.view(-1, 1, 1, 1), Qn, Qp,
+                            self.weight_alpha.numel() > 1,
+                            self.weight_offset.numel() > 1)
         return w_q
 
     def forward(self, x):
@@ -210,7 +219,7 @@ procedure:
         if self.debug:
             self.Qweight = w_q.clone().detach()
             self.Qactivation = x_q.clone().detach()
-        return F.conv2d(x_q, w_q, self.bias, self.stride, self.padding, self.dilation, self.groups)
+        return self._conv_forward(x_q, w_q, self.bias)
 
 
 class LSQPlusConvTranspose2d(nn.ConvTranspose2d):
@@ -236,9 +245,10 @@ class LSQPlusConvTranspose2d(nn.ConvTranspose2d):
             padding=fpmodule.padding,
             output_padding=fpmodule.output_padding,
             dilation=fpmodule.dilation,
-            groups=fpmodule.groups,
-            bias=fpmodule.bias,
+            groups=fpmodule.groups
         )
+        self.weight = fpmodule.weight
+        self.bias = fpmodule.bias
         self.nbits_w = nbits_w
         self.nbits_a = nbits_a
         self.quant_activation = quant_activation
@@ -255,7 +265,7 @@ class LSQPlusConvTranspose2d(nn.ConvTranspose2d):
         
         if self.per_channel:
             self.weight_offset = Parameter(torch.Tensor(self.out_channels))
-            self.act_offset = Parameter(torch.Tensor(self.out_channels))
+            self.act_offset = Parameter(torch.Tensor(self.in_channels))
         else:
             self.weight_offset = Parameter(torch.Tensor(1))
             self.act_offset = Parameter(torch.Tensor(1))
@@ -290,7 +300,9 @@ class LSQPlusConvTranspose2d(nn.ConvTranspose2d):
                 self.momentum * (self.act_offset - self.running_act_offset).data
 
     
-        x_q = LSQPlus.apply(x, self.act_alpha, self.act_offset, Qn, Qp)
+        x_q = LSQPlus.apply(x, self.act_alpha, self.act_offset.view(1, -1, 1, 1), Qn, Qp,
+                            self.act_alpha.numel() > 1,
+                            self.act_offset.numel() > 1)
         return x_q
 
     def lsq_quantization_weight(self, weight):
@@ -320,8 +332,11 @@ class LSQPlusConvTranspose2d(nn.ConvTranspose2d):
             weight_offset = grad_scale(self.weight_offset, g) if self.training else self.running_weight_offset
             w_q = round_pass((weight - weight_offset) / weight_alpha).clamp(Qn, Qp) * weight_alpha + weight_offset
         '''
-        w_q = LSQPlus.apply(weight.permute(1, 0, 2, 3), self.weight_alpha, self.weight_offset, Qn, Qp)
-        return w_q
+        w_q = LSQPlus.apply(weight.permute(1, 0, 2, 3), self.weight_alpha.view(-1, 1, 1, 1), self.weight_offset.view(-1, 1, 1, 1),
+                            Qn, Qp,
+                            self.weight_alpha.numel() > 1,
+                            self.weight_offset.numel() > 1)
+        return w_q.permute(1, 0, 2, 3)
 
     def forward(self, x):
         # if self.alpha is None:
@@ -336,4 +351,4 @@ class LSQPlusConvTranspose2d(nn.ConvTranspose2d):
         if self.debug:
             self.Qweight = w_q.clone().detach()
             self.Qactivation = x_q.clone().detach()
-        return F.conv_transpose2d(x_q, w_q, self.bias, self.stride, self.padding, self.output_padding, self.dilation, self.groups)
+        return F.conv_transpose2d(x_q, w_q, self.bias, self.stride, self.padding, self.output_padding)
