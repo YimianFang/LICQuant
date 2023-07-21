@@ -1,0 +1,30 @@
+{
+    // 使用 IntelliSense 了解相关属性。 
+    // 悬停以查看现有属性的描述。
+    // 欲了解更多信息，请访问: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Current File",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            // "args": ["-sr", "LSQ_yKL", "-d", "/data/fym/dataset", "-q", "5", "--lambda", "0.0250", "--cuda", "--save", "-id", "0", "-lr", "1e-4", "-tp", "encoder", "--checkpoint", "checkpoint/LSQ_yKL/checkpoint_best_loss_0_e2e.pth.tar"] // LSQ & StaQ
+            // "args": ["-sr", "LSQ_yKL", "-d", "/data/fym/dataset", "-q", "5", "--lambda", "0.0250", "--cuda", "--save", "-id", "0", "-lr", "1e-4", "-tp", "decoder", "-ord", "5", "--checkpoint", "checkpoint/LSQ_yKL/checkpoint_best_loss_4_encoder.pth.tar"] // LSQ_yKL
+            "args": ["-sr", "LSQPlus_yKL", "-d", "/data/fym/dataset", "-q", "5", "--lambda", "0.0250", "--cuda", "--save", "-id", "1", "-lr", "1e-4", "-tp", "e2e", "-ord", "0",] // LSQPlus_yKL "--checkpoint", "checkpoint/LSQ_yKL/checkpoint_best_loss_4_encoder.pth.tar"
+            // "args": ["-sr", "UniformN", "-nl", "6", "-d", "/data/fym/dataset", "-q", "5", "--cuda", "--save", "-id", "0", "-lr", "1e-5", "--checkpoint", "checkpoint/UniformN/checkpoint_layer6_best_loss.pth.tar"] // UniformN
+            // "args": ["-sr", "MixQ", "-ql", "0", "2", "4", "6", "-d", "/data/fym/dataset", "-q", "5", "--cuda", "-id", "0", "-lr", "1e-5", "-cnum", "100", "--absn"] // UniformN
+            // -sr UniformN -nl 0 -d /data/fym/dataset -q 5 --cuda --save -id 1 -lr 1e-5 --checkpoint checkpoint/UniformN/checkpoint_best_loss.pth.tar
+            // "args": ["-sr", "replc_GDN_ex", "-d", "/data/fym/dataset", "-q", "5", "--lambda", "0.0250", "--cuda", "-id", "0", "-lr", "1e-4", "--save",
+            // "--checkpoint", "/data/fym/AdaQ/checkpoint/replc_GDN_ex/checkpoint_best_loss.pth.tar"] // ex_train
+        }
+    ]
+}
+
+// LSQ_yKL/checkpoint_best_loss_0_e2e.pth.tar: Average losses:   Loss: 1.611e+00 |       PSNR: 33.282 |  MSE loss: 0.000 |       KL loss: 1.38e-09 |     Bpp loss: 0.85 |        Aux loss: 16.46
+// 1: Loss: 1.583e+00 |       PSNR: 33.433 |  MSE loss: 0.000 |       KL loss: 9.41e-10 |     Bpp loss: 0.85 |         Aux loss: 9.42
+// 2: Loss: 1.576e+00 |       PSNR: 33.490 |  MSE loss: 0.000 |       KL loss: 5.60e-10 |     Bpp loss: 0.85 |        Aux loss: 3.16
+// 3: Loss: 1.575e+00 |       PSNR: 33.495 |  MSE loss: 0.000 |       KL loss: 5.60e-10 |     Bpp loss: 0.85 |        Aux loss: 4.23
+// 4: Loss: 1.573e+00 |       PSNR: 33.505 |  MSE loss: 0.000 |       KL loss: 5.12e-10 |     Bpp loss: 0.85 |        Aux loss: 3.80
