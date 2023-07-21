@@ -194,7 +194,7 @@ def test_epoch(epoch, model):
 
 
 def save_checkpoint(state, is_best, step):
-    root = "/data/fym/AdaQ/checkpoint/" + subroot
+    root = "/data/fym/LICQuant/checkpoint/" + subroot
     if not os.path.exists(root):
         os.mkdir(root)
     filename = os.path.join(root, "epoch_{}_step_{}_loss_{:.4f}.pth.tar".format(state["epoch"], step, state["loss"]))

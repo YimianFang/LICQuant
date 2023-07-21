@@ -18,7 +18,7 @@
             // "args": ["-sr", "MixQ", "-ql", "0", "2", "4", "6", "-d", "/data/fym/dataset", "-q", "5", "--cuda", "-id", "0", "-lr", "1e-5", "-cnum", "100", "--absn"] // UniformN
             // -sr UniformN -nl 0 -d /data/fym/dataset -q 5 --cuda --save -id 1 -lr 1e-5 --checkpoint checkpoint/UniformN/checkpoint_best_loss.pth.tar
             // "args": ["-sr", "replc_GDN_ex", "-d", "/data/fym/dataset", "-q", "5", "--lambda", "0.0250", "--cuda", "-id", "0", "-lr", "1e-4", "--save",
-            // "--checkpoint", "/data/fym/AdaQ/checkpoint/replc_GDN_ex/checkpoint_best_loss.pth.tar"] // ex_train
+            // "--checkpoint", "/data/fym/LICQuant/checkpoint/replc_GDN_ex/checkpoint_best_loss.pth.tar"] // ex_train
         }
     ]
 }
