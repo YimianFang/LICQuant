@@ -66,20 +66,24 @@ class GDN_Taylor3(GDN):
     """
     def __init__(self, N, inverse=False):
         super().__init__(N, inverse)
-        self.init_state = 0
+        self.state = True
+        self.offset = nn.Parameter(torch.zeros_like(self.beta))
+        self.de1 = nn.Parameter(torch.zeros_like(self.beta))
+        self.de3 = nn.Parameter(torch.zeros_like(self.beta))
 
+    def init_de1(self):
+        beta = self.beta_reparam(self.beta)
+        if self.inverse:
+            self.de1 = nn.Parameter(torch.sqrt(beta))
+        else:
+            self.de1 = nn.Parameter(torch.rsqrt(beta))
+            
     def forward(self, x: Tensor) -> Tensor:
         
-        if self.init_state == 0:
-            self.offset = nn.Parameter(torch.zeros_like(self.beta))
-            beta = self.beta_reparam(self.beta)
-            if self.inverse:
-                self.de1 = nn.Parameter(torch.sqrt(beta))
-            else:
-                self.de1 = nn.Parameter(torch.rsqrt(beta))
-            self.de3 = nn.Parameter(torch.zeros_like(self.beta))
-            self.init_state = 1
-            
+        if self.state and self.de1.abs().sum() == 0:
+            self.init_de1()
+        self.state = False
+        
         _, C, _, _ = x.size()
         
         gamma = self.gamma_reparam(self.gamma)

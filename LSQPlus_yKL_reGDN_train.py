@@ -400,7 +400,11 @@ def main(argv):
         checkpoint = torch.load(args.checkpoint, map_location=device)
         last_epoch = checkpoint["epoch"] 
         best_loss = checkpoint["loss"]
-        net.load_state_dict(checkpoint["state_dict"])
+        prestate = checkpoint["state_dict"]
+        newstate = net.state_dict()
+        for k, v in newstate.items():
+            if k not in prestate: prestate[k] = v
+        net.load_state_dict(prestate)
         lr_scheduler.load_state_dict(checkpoint["lr_scheduler"])
         print("===The Performance of The Quantized Checkpoint===")
         test_epoch(last_epoch, net)
