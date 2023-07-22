@@ -98,17 +98,19 @@ class GDN_Taylor3(GDN):
         # if self.inverse:
         #     de1st = torch.sqrt(beta)
         #     de3rd = 1 / 2 * torch.rsqrt(beta) * F.conv2d(x**2, gamma)
+        #     de5th = - 1 / 8 * torch.rsqrt(beta**3) * (F.conv2d(x**2, gamma)**2)
         # else:
         #     de1st = torch.rsqrt(beta)
-        #     de3rd = - 1 / 2 * torch.rsqrt(beta ** 3) * F.conv2d(x**2, gamma)
+        #     de3rd = - 1 / 2 * torch.rsqrt(beta**3) * F.conv2d(x**2, gamma)
+        #     de5th = 3 / 8 * torch.rsqrt(beta**5) * (F.conv2d(x**2, gamma)**2)
         
-        if self.inverse:
-            de3 = torch.clamp_min(de3, torch.tensor(self.thre).to(de3.device))
-        else:
-            de3 = torch.clamp_max(de3, torch.tensor(-self.thre).to(de3.device))
+        # if self.inverse:
+        #     de3 = torch.clamp_min(de3, torch.tensor(self.thre).to(de3.device))
+        # else:
+        #     de3 = torch.clamp_max(de3, torch.tensor(-self.thre).to(de3.device))
             
         out = x * (de1 + de3 * F.conv2d(x**2, gamma)) + offset
-        # out = x * (de1st + de3rd) #
+        # out = x * (de1st + de3rd + de5th) #
 
         return out
     
