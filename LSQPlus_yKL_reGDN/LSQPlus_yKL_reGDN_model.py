@@ -55,10 +55,10 @@ class LSQPlus_reGDN_ScaleHyperprior(CompressionModel):
         self.g_a_fp[2].weight = fpmodel.g_a[2].weight
         self.g_a_fp[4].weight = fpmodel.g_a[4].weight
         self.g_a_fp[6].weight = fpmodel.g_a[6].weight
-        # self.g_a_fp[0].bias = fpmodel.g_a[0].bias
-        # self.g_a_fp[2].bias = fpmodel.g_a[2].bias
-        # self.g_a_fp[4].bias = fpmodel.g_a[4].bias
-        # self.g_a_fp[6].bias = fpmodel.g_a[6].bias
+        self.g_a_fp[0].bias = fpmodel.g_a[0].bias
+        self.g_a_fp[2].bias = fpmodel.g_a[2].bias
+        self.g_a_fp[4].bias = fpmodel.g_a[4].bias
+        self.g_a_fp[6].bias = fpmodel.g_a[6].bias
 
         self.g_s = nn.Sequential(
             LSQPlusConvTranspose2d(fpmodel.g_s[0], signed=True),
