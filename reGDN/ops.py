@@ -89,7 +89,7 @@ class GDN_Taylor3(GDN):
         
         gamma = self.gamma_reparam(self.gamma)
         gamma = gamma.reshape(C, C, 1, 1)
-        # beta = self.beta_reparam(self.beta) #
+        beta = self.beta_reparam(self.beta) #
         # beta = beta.reshape(1, -1, 1, 1) #
         offset = self.offset.reshape(1, -1, 1, 1)
         de1 = self.de1.reshape(1, -1, 1, 1)
@@ -109,7 +109,45 @@ class GDN_Taylor3(GDN):
         # else:
         #     de3 = torch.clamp_max(de3, torch.tensor(-self.thre).to(de3.device))
             
-        out = x * (de1 + de3 * F.conv2d(x**2, gamma)) + offset
+        out = x * (de1 + de3 * F.conv2d(x**2, gamma, beta)) + offset
+        # out = x * (de1st + de3rd + de5th) #
+
+        return out
+
+class GDN_v2(GDN):
+
+    def __init__(self, N, inverse=False):
+        super().__init__(N, inverse)
+        self.state = True
+        self.offset = nn.Parameter(torch.zeros_like(self.beta))
+        self.de1 = nn.Parameter(torch.ones_like(self.beta))
+        self.de3 = nn.Parameter(torch.zeros_like(self.beta))
+            
+    def forward(self, x: Tensor) -> Tensor:
+        
+        _, C, _, _ = x.size()
+        
+        gamma = self.gamma_reparam(self.gamma)
+        gamma = gamma.reshape(C, C, 1, 1)
+        beta = self.beta_reparam(self.beta) #
+        # beta = beta.reshape(1, -1, 1, 1) #
+        offset = self.offset.reshape(1, -1, 1, 1)
+        de1 = self.de1.reshape(1, -1, 1, 1)
+        de3 = self.de3.reshape(1, -1, 1, 1)
+        
+        # if self.inverse:
+        #     de1st = torch.sqrt(beta)
+        #     de3rd = 1 / 2 * torch.rsqrt(beta) * F.conv2d(x**2, gamma)
+        #     de5th = - 1 / 8 * torch.rsqrt(beta**3) * (F.conv2d(x**2, gamma)**2)
+        # else:
+        #     de1st = torch.rsqrt(beta)
+        #     de3rd = - 1 / 2 * torch.rsqrt(beta**3) * F.conv2d(x**2, gamma)
+        #     de5th = 3 / 8 * torch.rsqrt(beta**5) * (F.conv2d(x**2, gamma)**2)
+        
+        if self.inverse:
+            out = de1 * x * F.conv2d(x.abs(), gamma, beta) + de3 * F.conv2d(x**2, gamma, beta) + offset
+        else:
+            out = de1 * torch.sign(x) + de3 * F.conv2d(x.abs(), gamma, beta) + offset
         # out = x * (de1st + de3rd + de5th) #
 
         return out
