@@ -64,30 +64,39 @@ class GDN_Taylor3(GDN):
     """
     GDN三阶泰勒展开
     """
-    def __init__(self, N):
-        super().__init__(N)
+    def __init__(self, N, inverse=False):
+        super().__init__(N, inverse)
         self.init_state = 0
 
     def forward(self, x: Tensor) -> Tensor:
+        
         if self.init_state == 0:
             self.offset = nn.Parameter(torch.zeros_like(self.beta))
+            beta = self.beta_reparam(self.beta)
+            if self.inverse:
+                self.de1 = nn.Parameter(torch.sqrt(beta))
+            else:
+                self.de1 = nn.Parameter(torch.rsqrt(beta))
+            self.de3 = nn.Parameter(torch.zeros_like(self.beta))
             self.init_state = 1
             
         _, C, _, _ = x.size()
-
-        beta = self.beta_reparam(self.beta)
+        
         gamma = self.gamma_reparam(self.gamma)
         gamma = gamma.reshape(C, C, 1, 1)
-        beta = beta.reshape(1, -1, 1, 1)
+        # beta = beta.reshape(1, -1, 1, 1)
+        offset = self.offset.reshape(1, -1, 1, 1)
+        de1 = self.de1.reshape(1, -1, 1, 1)
+        de3 = self.de3.reshape(1, -1, 1, 1)
         
-        if self.inverse:
-            de1st = torch.sqrt(beta)
-            de3rd = 1 / 2 * torch.rsqrt(beta) * F.conv2d(x**2, gamma)
-        else:
-            de1st = torch.rsqrt(beta)
-            de3rd = - 1 / 2 * (torch.rsqrt(beta) ** 3) * F.conv2d(x**2, gamma)
+        # if self.inverse:
+        #     de1st = torch.sqrt(beta)
+        #     de3rd = 1 / 2 * torch.rsqrt(beta) * F.conv2d(x**2, gamma)
+        # else:
+        #     de1st = torch.rsqrt(beta)
+        #     de3rd = - 1 / 2 * (torch.rsqrt(beta) ** 3) * F.conv2d(x**2, gamma)
             
-        out = x * (de1st + de3rd) + self.offset.reshape(1, -1, 1, 1)
+        out = x * (de1 + de3 * F.conv2d(x**2, gamma)) + offset
 
         return out
     

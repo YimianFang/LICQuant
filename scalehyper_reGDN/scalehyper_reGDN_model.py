@@ -3,7 +3,6 @@ from compressai.entropy_models import EntropyBottleneck, GaussianConditional
 from compressai.layers import GDN, MaskedConv2d
 from compressai.models.utils import conv, deconv, update_registered_buffers
 from reGDN import GDN_Taylor3
-from .utils import *
 
 import torch
 import torch.nn as nn
@@ -12,7 +11,7 @@ import warnings
 import copy
 import os
 
-class LSQPlus_reGDN_ScaleHyperprior(CompressionModel):
+class reGDN_ScaleHyperprior(CompressionModel):
     r"""Scale Hyperprior model from J. Balle, D. Minnen, S. Singh, S.J. Hwang,
     N. Johnston: `"Variational Image Compression with a Scale Hyperprior"
     <https://arxiv.org/abs/1802.01436>`_ Int. Conf. on Learning Representations
@@ -32,59 +31,40 @@ class LSQPlus_reGDN_ScaleHyperprior(CompressionModel):
         self.entropy_bottleneck = EntropyBottleneck(N)
 
         self.g_a = nn.Sequential(
-            LSQPlusConv2d(fpmodel.g_a[0], signed=True),
-            GDN_Taylor3(N), # GDN保留
-            LSQPlusConv2d(fpmodel.g_a[2], signed=True),
+            fpmodel.g_a[0],
             GDN_Taylor3(N),
-            LSQPlusConv2d(fpmodel.g_a[4], signed=True),
+            fpmodel.g_a[2],
             GDN_Taylor3(N),
-            LSQPlusConv2d(fpmodel.g_a[6], signed=True),
+            fpmodel.g_a[4],
+            GDN_Taylor3(N),
+            fpmodel.g_a[6],
         )
-
-        self.g_a_fp = nn.Sequential(
-            conv(3, N),
-            GDN(N),
-            conv(N, N),
-            GDN(N),
-            conv(N, N),
-            GDN(N),
-            conv(N, M),
-        )
-        
-        self.g_a_fp[0].weight = fpmodel.g_a[0].weight
-        self.g_a_fp[2].weight = fpmodel.g_a[2].weight
-        self.g_a_fp[4].weight = fpmodel.g_a[4].weight
-        self.g_a_fp[6].weight = fpmodel.g_a[6].weight
-        # self.g_a_fp[0].bias = fpmodel.g_a[0].bias
-        # self.g_a_fp[2].bias = fpmodel.g_a[2].bias
-        # self.g_a_fp[4].bias = fpmodel.g_a[4].bias
-        # self.g_a_fp[6].bias = fpmodel.g_a[6].bias
 
         self.g_s = nn.Sequential(
-            LSQPlusConvTranspose2d(fpmodel.g_s[0], signed=True),
+            fpmodel.g_s[0],
             GDN_Taylor3(N, inverse=True),
-            LSQPlusConvTranspose2d(fpmodel.g_s[2], signed=True),
+            fpmodel.g_s[2],
             GDN_Taylor3(N, inverse=True),
-            LSQPlusConvTranspose2d(fpmodel.g_s[4], signed=True),
+            fpmodel.g_s[4],
             GDN_Taylor3(N, inverse=True),
-            LSQPlusConvTranspose2d(fpmodel.g_s[6], signed=True),
+            fpmodel.g_s[6],
         )
 
         self.h_a = nn.Sequential(
-            LSQPlusConv2d(fpmodel.h_a[0]),
-            nn.ReLU(),
-            LSQPlusConv2d(fpmodel.h_a[2]),
-            nn.ReLU(),
-            LSQPlusConv2d(fpmodel.h_a[4], signed=True),
+            fpmodel.h_a[0],
+            nn.ReLU(inplace=True),
+            fpmodel.h_a[2],
+            nn.ReLU(inplace=True),
+            fpmodel.h_a[4],
         )
 
         self.h_s = nn.Sequential(
-            LSQPlusConvTranspose2d(fpmodel.h_s[0]),
-            nn.ReLU(),
-            LSQPlusConvTranspose2d(fpmodel.h_s[2]),
-            nn.ReLU(),
-            LSQPlusConv2d(fpmodel.h_s[4]),
-            nn.ReLU(),
+            fpmodel.h_s[0],
+            nn.ReLU(inplace=True),
+            fpmodel.h_s[2],
+            nn.ReLU(inplace=True),
+            fpmodel.h_s[4],
+            nn.ReLU(inplace=True),
         )
 
         self.gaussian_conditional = GaussianConditional(None)
@@ -107,19 +87,15 @@ class LSQPlus_reGDN_ScaleHyperprior(CompressionModel):
 
     def forward(self, x):
         y = self.g_a(x)
-        y_fp = self.g_a_fp(x)
-        y_fp_hat = roundSTE.apply(y_fp)
         z = self.h_a(torch.abs(y))
         z_hat, z_likelihoods = self.entropy_bottleneck(z)
         scales_hat = self.h_s(z_hat)
-        _, y_likelihoods = self.gaussian_conditional(y, scales_hat)
-        y_hat = roundSTE.apply(y)
+        y_hat, y_likelihoods = self.gaussian_conditional(y, scales_hat)
         x_hat = self.g_s(y_hat)
 
         return {
             "x_hat": x_hat,
             "y_hat": y_hat,
-            "y_fp_hat": y_fp_hat,
             "likelihoods": {"y": y_likelihoods, "z": z_likelihoods},
         }
     
