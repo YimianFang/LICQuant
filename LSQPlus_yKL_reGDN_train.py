@@ -402,9 +402,11 @@ def main(argv):
         best_loss = checkpoint["loss"]
         prestate = checkpoint["state_dict"]
         newstate = net.state_dict()
+        state = {}
         for k, v in newstate.items():
-            if k not in prestate: prestate[k] = v
-        net.load_state_dict(prestate)
+            if k.replace("module.", "") not in prestate: state[k] = v
+            else: state[k] = prestate[k.replace("module.", "")]
+        net.load_state_dict(state)
         lr_scheduler.load_state_dict(checkpoint["lr_scheduler"])
         print("===The Performance of The Quantized Checkpoint===")
         test_epoch(last_epoch, net)

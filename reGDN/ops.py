@@ -70,6 +70,7 @@ class GDN_Taylor3(GDN):
         self.offset = nn.Parameter(torch.zeros_like(self.beta))
         self.de1 = nn.Parameter(torch.zeros_like(self.beta))
         self.de3 = nn.Parameter(torch.zeros_like(self.beta))
+        self.thre = 1e-6
 
     def init_de1(self):
         beta = self.beta_reparam(self.beta)
@@ -88,7 +89,8 @@ class GDN_Taylor3(GDN):
         
         gamma = self.gamma_reparam(self.gamma)
         gamma = gamma.reshape(C, C, 1, 1)
-        # beta = beta.reshape(1, -1, 1, 1)
+        # beta = self.beta_reparam(self.beta) #
+        # beta = beta.reshape(1, -1, 1, 1) #
         offset = self.offset.reshape(1, -1, 1, 1)
         de1 = self.de1.reshape(1, -1, 1, 1)
         de3 = self.de3.reshape(1, -1, 1, 1)
@@ -98,9 +100,15 @@ class GDN_Taylor3(GDN):
         #     de3rd = 1 / 2 * torch.rsqrt(beta) * F.conv2d(x**2, gamma)
         # else:
         #     de1st = torch.rsqrt(beta)
-        #     de3rd = - 1 / 2 * (torch.rsqrt(beta) ** 3) * F.conv2d(x**2, gamma)
+        #     de3rd = - 1 / 2 * torch.rsqrt(beta ** 3) * F.conv2d(x**2, gamma)
+        
+        if self.inverse:
+            de3 = torch.clamp_min(de3, torch.tensor(self.thre).to(de3.device))
+        else:
+            de3 = torch.clamp_max(de3, torch.tensor(-self.thre).to(de3.device))
             
         out = x * (de1 + de3 * F.conv2d(x**2, gamma)) + offset
+        # out = x * (de1st + de3rd) #
 
         return out
     
