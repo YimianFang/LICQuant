@@ -15,7 +15,7 @@ from torchvision import transforms
 
 from compressai.datasets import ImageFolder
 
-from ex_model import ex_ScaleHyperprior
+from LSQPlus_yKL_reGDN.LSQPlus_yKL_reGDN_model import LSQPlus_reGDN_ScaleHyperprior
 from compressai.zoo import models
 
 class RateDistortionLoss(nn.Module):
@@ -24,6 +24,7 @@ class RateDistortionLoss(nn.Module):
     def __init__(self, lmbda=1e-2):
         super().__init__()
         self.mse = nn.MSELoss()
+        self.kl = nn.KLDivLoss(log_target=True)
         self.lmbda = lmbda
 
     def forward(self, output, target):
@@ -36,7 +37,13 @@ class RateDistortionLoss(nn.Module):
             for likelihoods in output["likelihoods"].values()
         )
         out["mse_loss"] = self.mse(output["x_hat"], target)
+        out["kl_loss"] = torch.abs(self.kl(output["y_hat"], output["y_fp_hat"]))
+        if out["kl_loss"] * 1e-10 > 1:
+            kl_lmbda = 1e-10
+        else:
+            kl_lmbda = 1e4
         out["loss"] = self.lmbda * 255**2 * out["mse_loss"] + out["bpp_loss"]
+        out["loss"] += out["kl_loss"] * kl_lmbda
 
         return out
 
@@ -71,11 +78,26 @@ def configure_optimizers(net, args):
     """Separate parameters for the main optimizer and the auxiliary optimizer.
     Return two optimizers"""
 
-    parameters = {
-        n
-        for n, p in net.named_parameters()
-        if not n.endswith(".quantiles") and p.requires_grad
-    }
+    if args.training_params == "encoder":
+        parameters = {
+            n
+            for n, p in net.named_parameters()
+            if not n.endswith(".quantiles") and "_fp" not in n  and ("g_s" not in n and "h_a" not in n and "h_s" not in n) and p.requires_grad
+        }
+    elif args.training_params == "decoder":
+        parameters = {
+            n
+            for n, p in net.named_parameters()
+            if not n.endswith(".quantiles") and "_fp" not in n  and ("g_a" not in n) and p.requires_grad
+        }
+    elif args.training_params == "e2e":
+        parameters = {
+            n
+            for n, p in net.named_parameters()
+            if not n.endswith(".quantiles") and "_fp" not in n and p.requires_grad
+        }
+
+
     aux_parameters = {
         n
         for n, p in net.named_parameters()
@@ -131,9 +153,10 @@ def train_one_epoch(
                 f"Train epoch {epoch}: ["
                 f"{i*len(d)}/{len(train_dataloader.dataset)}"
                 f" ({100. * i / len(train_dataloader):.0f}%)]"
-                f'\tLoss: {out_criterion["loss"].item():.3f} |'
+                f'\tLoss: {out_criterion["loss"].item():.3e} |'
                 f'\tPSNR: {cntPSNR(out_criterion["mse_loss"].item()):.3f} |'
                 f'\tMSE loss: {out_criterion["mse_loss"].item():.3f} |'
+                f'\tKL loss: {out_criterion["kl_loss"].item():.2e} |'
                 f'\tBpp loss: {out_criterion["bpp_loss"].item():.2f} |'
                 f"\tAux loss: {aux_loss.item():.2f}"
             )
@@ -166,6 +189,7 @@ def test_epoch(epoch, model):
     device = next(model.parameters()).device
 
     loss = AverageMeter()
+    kl_loss = AverageMeter()
     bpp_loss = AverageMeter()
     mse_loss = AverageMeter()
     aux_loss = AverageMeter()
@@ -178,14 +202,16 @@ def test_epoch(epoch, model):
 
             aux_loss.update(model.aux_loss())
             bpp_loss.update(out_criterion["bpp_loss"])
+            kl_loss.update(out_criterion["kl_loss"])
             loss.update(out_criterion["loss"])
             mse_loss.update(out_criterion["mse_loss"])
 
     print(
         f"Test epoch {epoch}: Average losses:"
-        f"\tLoss: {loss.avg:.3f} |"
+        f"\tLoss: {loss.avg:.3e} |"
         f'\tPSNR: {cntPSNR(mse_loss.avg):.3f} |'
         f"\tMSE loss: {mse_loss.avg:.3f} |"
+        f"\tKL loss: {kl_loss.avg:.2e} |"
         f"\tBpp loss: {bpp_loss.avg:.2f} |"
         f"\tAux loss: {aux_loss.avg:.2f}"
     )
@@ -194,14 +220,14 @@ def test_epoch(epoch, model):
 
 
 def save_checkpoint(state, is_best, step):
-    root = "/data/fym/LICQuant/checkpoint/" + subroot
+    root = "checkpoint/" + subroot
     if not os.path.exists(root):
         os.mkdir(root)
     filename = os.path.join(root, "epoch_{}_step_{}_loss_{:.4f}.pth.tar".format(state["epoch"], step, state["loss"]))
     torch.save(state, filename)
     if is_best:
         print("New Best Checkpoint Saved!")
-        shutil.copyfile(filename, os.path.join(root, "checkpoint_best_loss.pth.tar"))
+        shutil.copyfile(filename, os.path.join(root, "checkpoint_best_loss_" + cp_order + "_" + training_params + ".pth.tar"))
     print("\n")
 
 def cntPSNR(mse):
@@ -219,6 +245,12 @@ def parse_args(argv):
     )
     parser.add_argument(
         "-d", "--dataset", type=str, required=True, help="Training dataset"
+    )
+    parser.add_argument(
+        "-tp", "--training_params", type=str, required=True, help="the parameters to train"
+    )
+    parser.add_argument(
+        "-ord", "--cp_order", type=str, required=True, help="the order of checkpoint"
     )
     parser.add_argument(
         "-e",
@@ -319,8 +351,10 @@ def main(argv):
         torch.cuda.set_device(args.cuda_id)
         device = device + ':' + str(args.cuda_id)
 
-    global train_dataloader, test_dataloader, criterion, lr_scheduler, best_loss, subroot
+    global train_dataloader, test_dataloader, criterion, lr_scheduler, best_loss, subroot, training_params, cp_order
     subroot = args.subroot
+    training_params = args.training_params
+    cp_order = args.cp_order
     train_dataloader = DataLoader(
         train_dataset,
         batch_size=args.batch_size,
@@ -338,7 +372,7 @@ def main(argv):
     )
 
     prefpnet = models["bmshj2018-hyperprior"](quality=args.quality, metric="mse", pretrained=True) # quality=5, lambda=0.0250, N=128, M=192
-    net = ex_ScaleHyperprior(prefpnet.N, prefpnet.M)
+    net = LSQPlus_reGDN_ScaleHyperprior(prefpnet)
     # fpstate = {}
     # for k in net.state_dict():
     #     if k in prefpnet.state_dict():
@@ -356,6 +390,9 @@ def main(argv):
     lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, "min")
     criterion = RateDistortionLoss(lmbda=args.lmbda)
 
+    # print("===The Performance of The Pre-trained Floating Point Model===")
+    # test_epoch(0, prefpnet.to(device))
+
     last_epoch = 0
     best_loss = float("inf")
     if args.checkpoint:  # load from previous quantized checkpoint
@@ -364,14 +401,12 @@ def main(argv):
         last_epoch = checkpoint["epoch"] 
         best_loss = checkpoint["loss"]
         net.load_state_dict(checkpoint["state_dict"])
-        optimizer.load_state_dict(checkpoint["optimizer"])
-        aux_optimizer.load_state_dict(checkpoint["aux_optimizer"])
         lr_scheduler.load_state_dict(checkpoint["lr_scheduler"])
-        print("===The Performance of The Pretrained Checkpoint===")
+        print("===The Performance of The Quantized Checkpoint===")
         test_epoch(last_epoch, net)
 
     
-    print("=== Begin to Train ===")
+    print("===QAT Begins===")
     for epoch in range(last_epoch, args.epochs):
         print(f"Learning rate: {optimizer.param_groups[0]['lr']}")
         train_one_epoch(

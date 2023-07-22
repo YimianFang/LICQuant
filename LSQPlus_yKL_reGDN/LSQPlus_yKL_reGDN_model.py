@@ -2,7 +2,8 @@ from compressai.models.google import CompressionModel
 from compressai.entropy_models import EntropyBottleneck, GaussianConditional
 from compressai.layers import GDN, MaskedConv2d
 from compressai.models.utils import conv, deconv, update_registered_buffers
-from utils import *
+from reGDN import GDN_Taylor3
+from .utils import *
 
 import torch
 import torch.nn as nn
@@ -11,7 +12,7 @@ import warnings
 import copy
 import os
 
-class LSQScaleHyperprior(CompressionModel):
+class LSQPlus_reGDN_ScaleHyperprior(CompressionModel):
     r"""Scale Hyperprior model from J. Balle, D. Minnen, S. Singh, S.J. Hwang,
     N. Johnston: `"Variational Image Compression with a Scale Hyperprior"
     <https://arxiv.org/abs/1802.01436>`_ Int. Conf. on Learning Representations
@@ -31,13 +32,13 @@ class LSQScaleHyperprior(CompressionModel):
         self.entropy_bottleneck = EntropyBottleneck(N)
 
         self.g_a = nn.Sequential(
-            QuanConv2d(fpmodel.g_a[0], LsqQuan(8), LsqQuan(8, per_channel=False)),
-            fpmodel.g_a[1], # GDN保留
-            QuanConv2d(fpmodel.g_a[2], LsqQuan(8), LsqQuan(8, per_channel=False)),
-            fpmodel.g_a[3],
-            QuanConv2d(fpmodel.g_a[4], LsqQuan(8), LsqQuan(8, per_channel=False)),
-            fpmodel.g_a[5],
-            QuanConv2d(fpmodel.g_a[6], LsqQuan(8), LsqQuan(8, per_channel=False)),
+            LSQPlusConv2d(fpmodel.g_a[0], signed=True),
+            GDN_Taylor3(N), # GDN保留
+            LSQPlusConv2d(fpmodel.g_a[2], signed=True),
+            GDN_Taylor3(N),
+            LSQPlusConv2d(fpmodel.g_a[4], signed=True),
+            GDN_Taylor3(N),
+            LSQPlusConv2d(fpmodel.g_a[6], signed=True),
         )
 
         self.g_a_fp = nn.Sequential(
@@ -60,29 +61,29 @@ class LSQScaleHyperprior(CompressionModel):
         self.g_a_fp[6].bias = fpmodel.g_a[6].bias
 
         self.g_s = nn.Sequential(
-            QuanConvTranspose2d(fpmodel.g_s[0], LsqQuan(8), LsqQuan(8, per_channel=False)),
+            LSQPlusConvTranspose2d(fpmodel.g_s[0], signed=True),
             fpmodel.g_s[1],
-            QuanConvTranspose2d(fpmodel.g_s[2], LsqQuan(8), LsqQuan(8, per_channel=False)),
+            LSQPlusConvTranspose2d(fpmodel.g_s[2], signed=True),
             fpmodel.g_s[3],
-            QuanConvTranspose2d(fpmodel.g_s[4], LsqQuan(8), LsqQuan(8, per_channel=False)),
+            LSQPlusConvTranspose2d(fpmodel.g_s[4], signed=True),
             fpmodel.g_s[5],
-            QuanConvTranspose2d(fpmodel.g_s[6], LsqQuan(8), LsqQuan(8, per_channel=False)),
+            LSQPlusConvTranspose2d(fpmodel.g_s[6], signed=True),
         )
 
         self.h_a = nn.Sequential(
-            QuanConv2d(fpmodel.h_a[0], LsqQuan(8), LsqQuan(8, all_positive=True, per_channel=False)),
+            LSQPlusConv2d(fpmodel.h_a[0]),
             nn.ReLU(),
-            QuanConv2d(fpmodel.h_a[2], LsqQuan(8), LsqQuan(8, all_positive=True, per_channel=False)),
+            LSQPlusConv2d(fpmodel.h_a[2]),
             nn.ReLU(),
-            QuanConv2d(fpmodel.h_a[4], LsqQuan(8), LsqQuan(8, per_channel=False)),
+            LSQPlusConv2d(fpmodel.h_a[4], signed=True),
         )
 
         self.h_s = nn.Sequential(
-            QuanConvTranspose2d(fpmodel.h_s[0], LsqQuan(8), LsqQuan(8, all_positive=True, per_channel=False)),
+            LSQPlusConvTranspose2d(fpmodel.h_s[0]),
             nn.ReLU(),
-            QuanConvTranspose2d(fpmodel.h_s[2], LsqQuan(8), LsqQuan(8, all_positive=True, per_channel=False)),
+            LSQPlusConvTranspose2d(fpmodel.h_s[2]),
             nn.ReLU(),
-            QuanConv2d(fpmodel.h_s[4], LsqQuan(8), LsqQuan(8, all_positive=True, per_channel=False)),
+            LSQPlusConv2d(fpmodel.h_s[4]),
             nn.ReLU(),
         )
 
@@ -102,6 +103,7 @@ class LSQScaleHyperprior(CompressionModel):
             state_dict,
         )
         super().load_state_dict(state_dict)
+    
 
     def forward(self, x):
         y = self.g_a(x)
