@@ -404,8 +404,10 @@ def main(argv):
         newstate = net.state_dict()
         state = {}
         for k, v in newstate.items():
-            if k.replace("module.", "") not in prestate: state[k] = v
-            else: state[k] = prestate[k.replace("module.", "")]
+            if k.replace("module.", "") in prestate: state[k] = prestate[k.replace("module.", "")]
+            elif k in prestate: state[k] = prestate[k]
+            elif ("module." + k) in prestate: state[k] = prestate["module." + k]
+            else: state[k] = v
         net.load_state_dict(state)
         lr_scheduler.load_state_dict(checkpoint["lr_scheduler"])
         print("===The Performance of The Quantized Checkpoint===")

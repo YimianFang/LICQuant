@@ -248,7 +248,83 @@ class GDN_v4(GDN):
         # out = x * (de1st + de3rd + de5th) #
 
         return out
-    
+
+class GDN_v5(GDN):
+
+    def __init__(self, N, inverse=False):
+        super().__init__(N, inverse)
+        self.state = True
+        self.offset = nn.Parameter(torch.zeros_like(self.beta))
+        self.s1 = nn.Parameter(torch.ones_like(self.beta))
+        self.s2 = nn.Parameter(torch.zeros_like(self.beta))
+        self.momentum = 0.9
+            
+    def forward(self, x: Tensor) -> Tensor:
+        
+        _, C, _, _ = x.size()
+        
+        gamma = self.gamma_reparam(self.gamma)
+        gamma = gamma.reshape(C, C, 1, 1)
+        beta = self.beta_reparam(self.beta) #
+        # beta = beta.reshape(1, -1, 1, 1) #
+        s1 = self.s1.reshape(1, -1, 1, 1)
+        
+        if self.state and not self.training and self.s2.data.sum() == 0:
+            # self.s2.data.copy_(torch.sqrt(beta))
+            self.s2.data.copy_(x.mean(dim=(0, 2, 3)))
+            s2 = self.s2.reshape(1, -1, 1, 1)
+        self.state = False
+        s2 = self.s2.reshape(1, -1, 1, 1)
+        offset = self.offset.reshape(1, -1, 1, 1)
+        gamma = gamma.detach()
+        beta = beta.detach()
+        
+        if self.inverse:
+            norm = torch.sqrt(F.conv2d(s2**2, gamma, beta))
+        else:
+            norm = torch.rsqrt(F.conv2d(s2**2, gamma, beta))
+            
+        out = s1 * x * norm + offset
+
+        return out
+
+class GDN_v6(GDN):
+
+    def __init__(self, N, num=256, inverse=False):
+        super().__init__(N, inverse)
+        self.state = True
+        self.offset = nn.Parameter(torch.zeros_like(self.beta))
+        self.s1 = nn.Parameter(torch.ones_like(self.beta))
+        self.s2 = nn.Parameter(torch.zeros_like(self.beta))
+        beta = self.beta_reparam(self.beta)
+        choice = torch.ones(num, 1)
+        self.embedding = nn.Embedding.from_pretrained(choice)
+            
+    def forward(self, x: Tensor) -> Tensor:
+        
+        _, C, _, _ = x.size()
+        
+        gamma = self.gamma_reparam(self.gamma)
+        gamma = gamma.reshape(C, C, 1, 1)
+        beta = self.beta_reparam(self.beta) #
+        # beta = beta.reshape(1, -1, 1, 1) #
+        offset = self.offset.reshape(1, -1, 1, 1)
+        
+        num = self.embedding.weight.shape[0]
+        xx = F.conv2d(x**2, gamma, beta)
+        xx_scl = xx.max() / (num - 1)
+        xx = torch.clamp(roundSTE.apply(xx / xx_scl), 0, num - 1)
+        norm = self.embedding(xx.int()).squeeze()
+        
+        if self.inverse:
+            s1 = torch.sqrt(beta).reshape(1, -1, 1, 1)
+        else:
+            s1 = torch.rsqrt(beta).reshape(1, -1, 1, 1)
+          
+        out = s1 * x * norm + offset
+
+        return out
+       
 class GDN1(GDN):
     r"""Simplified GDN layer.
 
@@ -290,3 +366,15 @@ class GDN_exp(GDN):
         out = x * torch.exp(-torch.abs(norm))
 
         return out
+        
+class roundSTE(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, input):
+        input = torch.round(input)
+        return input
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        # Straight-through estimator
+        # print("roundSTE_grad: ", grad_output)
+        return grad_output, None, None, None

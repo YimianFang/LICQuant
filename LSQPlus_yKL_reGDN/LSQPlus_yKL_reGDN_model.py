@@ -32,11 +32,11 @@ class LSQPlus_reGDN_ScaleHyperprior(CompressionModel):
 
         self.g_a = nn.Sequential(
             LSQPlusConv2d(fpmodel.g_a[0], signed=True),
-            GDN_v3(N), # GDN保留
+            GDN_v6(N), # GDN保留
             LSQPlusConv2d(fpmodel.g_a[2], signed=True),
-            GDN_v3(N),
+            GDN_v6(N),
             LSQPlusConv2d(fpmodel.g_a[4], signed=True),
-            GDN_v3(N),
+            GDN_v6(N),
             LSQPlusConv2d(fpmodel.g_a[6], signed=True),
         )
 
@@ -59,11 +59,11 @@ class LSQPlus_reGDN_ScaleHyperprior(CompressionModel):
 
         self.g_s = nn.Sequential(
             LSQPlusConvTranspose2d(fpmodel.g_s[0], signed=True),
-            GDN_v3(N, inverse=True),
+            GDN_v6(N, inverse=True),
             LSQPlusConvTranspose2d(fpmodel.g_s[2], signed=True),
-            GDN_v3(N, inverse=True),
+            GDN_v6(N, inverse=True),
             LSQPlusConvTranspose2d(fpmodel.g_s[4], signed=True),
-            GDN_v3(N, inverse=True),
+            GDN_v6(N, inverse=True),
             LSQPlusConvTranspose2d(fpmodel.g_s[6], signed=True),
         )
 
