@@ -314,12 +314,13 @@ class GDN_v6(GDN):
         xx = F.conv2d(x**2, gamma, beta)
         xx_scl = xx.max() / (num - 1)
         xx = torch.clamp(roundSTE.apply(xx / xx_scl), 0, num - 1)
-        norm = self.embedding(xx.int()).squeeze()
         
         if self.inverse:
             s1 = torch.sqrt(beta).reshape(1, -1, 1, 1)
+            norm = self.embedding(xx.int()).squeeze()
         else:
             s1 = torch.rsqrt(beta).reshape(1, -1, 1, 1)
+            norm = 1. / self.embedding(xx.int()).squeeze()
           
         out = s1 * x * norm + offset
 
