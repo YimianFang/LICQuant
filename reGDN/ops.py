@@ -241,9 +241,9 @@ class GDN_v4(GDN):
         offset = self.offset.reshape(1, -1, 1, 1)
         
         if self.inverse:
-            out = s1 * x * s2 + offset + s3 * F.conv2d(x**2, gamma, beta)
+            out = s1 * x * torch.sqrt(beta).reshape(1, -1, 1, 1) + offset + s3 * F.conv2d(x**2, gamma, beta)
         else:
-            out = s1 * x / s2 + offset + s3 * F.conv2d(x**2, gamma, beta)
+            out = s1 * x / torch.sqrt(beta).reshape(1, -1, 1, 1) + offset + s3 * F.conv2d(x**2, gamma, beta)
             
         # out = x * (de1st + de3rd + de5th) #
 
