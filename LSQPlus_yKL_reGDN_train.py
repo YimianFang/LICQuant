@@ -399,7 +399,7 @@ def main(argv):
         print("Loading", args.checkpoint)
         checkpoint = torch.load(args.checkpoint, map_location=device)
         last_epoch = checkpoint["epoch"]
-        if cp_order: best_loss = checkpoint["loss"]
+        if int(cp_order): best_loss = checkpoint["loss"]
         prestate = checkpoint["state_dict"]
         newstate = net.state_dict()
         state = {}
