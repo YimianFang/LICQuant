@@ -109,7 +109,11 @@ class GDN_Taylor3(GDN):
         # else:
         #     de3 = torch.clamp_max(de3, torch.tensor(-self.thre).to(de3.device))
             
-        out = x * (de1 + de3 * F.conv2d(x**2, gamma, beta)) + offset
+        if self.inverse:
+            out = de1 * x * F.conv2d(x.abs(), gamma, beta) + de3 * F.conv2d(x**2, gamma, beta) + offset
+        else:
+            out = de1 * x + de3 * F.conv2d(x**2, gamma, beta) + offset
+            
         # out = x * (de1st + de3rd + de5th) #
 
         return out
@@ -120,8 +124,9 @@ class GDN_v2(GDN):
         super().__init__(N, inverse)
         self.state = True
         self.offset = nn.Parameter(torch.zeros_like(self.beta))
-        self.de1 = nn.Parameter(torch.ones_like(self.beta))
-        self.de3 = nn.Parameter(torch.zeros_like(self.beta))
+        self.s1 = nn.Parameter(torch.ones_like(self.beta))
+        self.s3 = nn.Parameter(torch.zeros_like(self.beta))
+        self.momentum = 0.9
             
     def forward(self, x: Tensor) -> Tensor:
         
@@ -131,23 +136,26 @@ class GDN_v2(GDN):
         gamma = gamma.reshape(C, C, 1, 1)
         beta = self.beta_reparam(self.beta) #
         # beta = beta.reshape(1, -1, 1, 1) #
-        offset = self.offset.reshape(1, -1, 1, 1)
-        de1 = self.de1.reshape(1, -1, 1, 1)
-        de3 = self.de3.reshape(1, -1, 1, 1)
+        s1 = self.s1.reshape(1, -1, 1, 1)
         
-        # if self.inverse:
-        #     de1st = torch.sqrt(beta)
-        #     de3rd = 1 / 2 * torch.rsqrt(beta) * F.conv2d(x**2, gamma)
-        #     de5th = - 1 / 8 * torch.rsqrt(beta**3) * (F.conv2d(x**2, gamma)**2)
-        # else:
-        #     de1st = torch.rsqrt(beta)
-        #     de3rd = - 1 / 2 * torch.rsqrt(beta**3) * F.conv2d(x**2, gamma)
-        #     de5th = 3 / 8 * torch.rsqrt(beta**5) * (F.conv2d(x**2, gamma)**2)
+        if self.state and not self.training:
+            self.s3.data = torch.sqrt(F.conv2d(x**2, gamma, beta)).amax(dim=(0, 2, 3))
+            s3 = self.s3.reshape(1, -1, 1, 1)
+            if self.inverse:
+                self.offset.data = (x * torch.sqrt(F.conv2d(x**2, gamma, beta)) - x * s3).mean(dim=(0, 2, 3))
+            else:
+                self.offset.data = (x / torch.sqrt(F.conv2d(x**2, gamma, beta)) - x / s3).mean(dim=(0, 2, 3))
+            self.state = False
+        # elif self.training:
+        #     self.s3.data = self.s3.data * self.momentum + torch.sqrt(F.conv2d(x**2, gamma, beta)).amax(dim=(0, 2, 3))
+        s3 = self.s3.reshape(1, -1, 1, 1)
+        offset = self.offset.reshape(1, -1, 1, 1)
         
         if self.inverse:
-            out = de1 * x * F.conv2d(x.abs(), gamma, beta) + de3 * F.conv2d(x**2, gamma, beta) + offset
+            out = s1 * x * s3 + offset
         else:
-            out = de1 * torch.sign(x) + de3 * F.conv2d(x.abs(), gamma, beta) + offset
+            out = s1 * x / s3 + offset
+            
         # out = x * (de1st + de3rd + de5th) #
 
         return out

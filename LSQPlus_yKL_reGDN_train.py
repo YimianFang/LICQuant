@@ -398,8 +398,8 @@ def main(argv):
     if args.checkpoint:  # load from previous quantized checkpoint
         print("Loading", args.checkpoint)
         checkpoint = torch.load(args.checkpoint, map_location=device)
-        last_epoch = checkpoint["epoch"] 
-        best_loss = checkpoint["loss"]
+        last_epoch = checkpoint["epoch"]
+        if cp_order: best_loss = checkpoint["loss"]
         prestate = checkpoint["state_dict"]
         newstate = net.state_dict()
         state = {}
