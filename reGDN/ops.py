@@ -290,17 +290,19 @@ class GDN_v5(GDN):
 
 class GDN_v6(GDN):
 
-    def __init__(self, N, num=128, inverse=False):
+    def __init__(self, N, num=128, inverse=False, momentum=0.9):
         super().__init__(N, inverse)
         self.register_buffer("state", torch.tensor(True))
         self.offset = nn.Parameter(torch.zeros_like(self.beta))
         self.s1 = nn.Parameter(torch.ones_like(self.beta))
         self.embedding = nn.Embedding(self.beta.numel() * num, 1)
         self.embedding.weight.data.fill_(1)
-        self.qscl = nn.Parameter(torch.ones_like(self.beta))
-        self.qoff = nn.Parameter(torch.ones_like(self.beta))
+        # self.qscl = nn.Parameter(torch.ones_like(self.beta))
+        # self.qoff = nn.Parameter(torch.ones_like(self.beta))
+        self.qclip = nn.Parameter(torch.zeros_like(self.beta))
         self.Qp = self.embedding.weight.shape[0] / self.beta.numel() - 1
         self.Qn = 0
+        self.register_buffer("momentum", torch.tensor(momentum))
             
     def forward(self, x: Tensor) -> Tensor:
         device = x.device
@@ -316,17 +318,22 @@ class GDN_v6(GDN):
         xx = F.conv2d(x**2, gamma, beta)
         
         if self.state:
-            self.qscl.data.copy_((xx.amax(dim=(0, 2, 3)) - xx.amin(dim=(0, 2, 3))) / (Qp - Qn) * 0.9)
-            self.qoff.data.copy_(xx.amin(dim=(0, 2, 3)) * 0.9 - Qn * self.qscl)
+            # qscl和qoff无法更新梯度，如下初始化最好为32.6 0.84
+            # self.qscl.data.copy_((xx.amax(dim=(0, 2, 3)) - xx.amin(dim=(0, 2, 3))) / (Qp - Qn) * 0.9)
+            # self.qoff.data.copy_(xx.amin(dim=(0, 2, 3)) * 0.9 - Qn * self.qscl)
             if self.inverse:
                 self.s1.data.copy_(torch.sqrt(beta))
             else:
                 self.s1.data.copy_(torch.rsqrt(beta))
             self.state = torch.tensor(False)
         
-        qoff = self.qoff.reshape(1, -1, 1, 1)
-        qscl = self.qscl.reshape(1, -1, 1, 1)
-        xx = torch.clamp(roundSTE.apply((xx - qoff) / qscl), Qn, Qp)
+        # qoff = self.qoff.reshape(1, -1, 1, 1)
+        # qscl = self.qscl.reshape(1, -1, 1, 1)
+        if self.training:
+            self.qclip.data = self.qclip.data * self.momentum + xx.amax(dim=(0, 2, 3)) * (1 - self.momentum)
+        qclip = self.qclip.reshape(1, -1, 1, 1)
+        scl = qclip / Qp
+        xx = torch.clamp(roundSTE.apply(xx / scl), Qn, Qp)
         
         embedding_bias = (torch.tensor(range(C), dtype=int) * (int(Qp) + 1)).reshape(1, -1, 1, 1).to(device)
         if self.inverse:
