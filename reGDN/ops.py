@@ -6,7 +6,7 @@ from torch import Tensor
 
 from compressai.ops.parametrizers import NonNegativeParametrizer
 
-import copy
+import copy, math
 
 class GDN(nn.Module):
     r"""Generalized Divisive Normalization layer.
@@ -346,7 +346,67 @@ class GDN_v6(GDN):
         out = s1 * x * norm
 
         return out
-       
+
+class GDN_x2Q(GDN):
+    """
+    grad needs to be small enough!
+    """
+    def __init__(self, N, num=128, inverse=False):
+        super().__init__(N, inverse)
+        self.register_buffer("state", torch.tensor(True))
+        # self.offset = nn.Parameter(torch.zeros_like(self.beta))
+        self.s1 = nn.Parameter(torch.ones_like(self.beta))
+        # self.embedding = nn.Embedding(self.beta.numel() * num, 1)
+        # self.embedding.weight.data.fill_(1)
+        self.qscl = nn.Parameter(torch.ones_like(self.beta))
+        self.qoff = nn.Parameter(torch.ones_like(self.beta))
+        self.register_buffer("Qp", torch.tensor(num-1))
+        self.register_buffer("Qn", torch.tensor(0))
+            
+    def forward(self, x: Tensor) -> Tensor:
+        device = x.device
+        _, C, _, _ = x.size()
+        
+        gamma = self.gamma_reparam(self.gamma)
+        gamma = gamma.reshape(C, C, 1, 1)
+        beta = self.beta_reparam(self.beta) #
+        # beta = beta.reshape(1, -1, 1, 1) #
+        
+        Qn, Qp = self.Qn, self.Qp
+        
+        xx = F.conv2d(x**2, gamma, beta)
+        
+        if self.state:
+            # qscl和qoff无法更新梯度，如下初始化最好为32.6 0.84
+            self.qscl.data.copy_((xx.amax(dim=(0, 2, 3)) - xx.amin(dim=(0, 2, 3))) / (Qp - Qn) * 0.9)
+            self.qoff.data.copy_(xx.amin(dim=(0, 2, 3)) * 0.9 - Qn * self.qscl)
+            # if self.inverse:
+            #     self.s1.data.copy_(torch.sqrt(beta))
+            # else:
+            #     self.s1.data.copy_(torch.rsqrt(beta))
+            self.state = torch.tensor(False)
+        
+        qoff = self.qoff.reshape(1, -1, 1, 1)
+        qscl = self.qscl.reshape(1, -1, 1, 1)
+        xx = LSQPlus.apply(xx, qscl, qoff, Qn, Qp)
+        
+        # embedding_bias = (torch.tensor(range(C), dtype=int) * (int(Qp) + 1)).reshape(1, -1, 1, 1).to(device)
+        # if self.inverse:
+        #     norm = self.embedding(xx.int() + embedding_bias).squeeze()
+        # else:
+        #     norm = 1. / self.embedding(xx.int() + embedding_bias).squeeze()
+        
+        if self.inverse:
+            norm = torch.sqrt(xx)
+        else:
+            norm = torch.rsqrt(xx)
+        
+        s1 = self.s1.reshape(1, -1, 1, 1)
+        
+        out = s1 * x * norm
+
+        return out
+    
 class GDN1(GDN):
     r"""Simplified GDN layer.
 
@@ -400,3 +460,55 @@ class roundSTE(torch.autograd.Function):
         # Straight-through estimator
         # print("roundSTE_grad: ", grad_output)
         return grad_output, None, None, None
+
+class LSQPlus(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, x, scale, beta, lower_bound, upper_bound):
+        r"""
+        LSQPlus: y = Round[clamp((x - beta)/s, n, p)] * s + beta
+        Args:
+            x: input tensor
+            scale: QAT scale
+            beta: QAT offset
+        return:
+            x_quant: quantization tensor of x
+        """
+        x_hat = ((x - beta) / scale).round()
+        ctx.save_for_backward(x, x_hat, scale, beta)
+        ctx.constant = [lower_bound, upper_bound]
+        x_hat = x_hat.clamp(lower_bound, upper_bound)
+        x_quant = x_hat * scale + beta
+        return x_quant
+    
+    @staticmethod
+    def backward(ctx, grad_output):
+        r"""
+
+        Backward:
+            x_gradient: x[x > p or x < n] = 0 else 1
+            scale_gradient: -(x - beta)/s + round[(x - beta)/s] else n or p
+            beta_gradient: 0 or 1
+        """
+        x, x_hat, scale, beta = ctx.saved_variables
+        lower_bound, upper_bound = ctx.constant
+
+        r"""1. input gradient"""
+        x_grad = torch.ones_like(grad_output)
+        x_grad[(x - beta)/scale <= lower_bound] = 0
+        x_grad[(x - beta)/scale >= upper_bound] = 0
+        x_grad *= grad_output
+
+        r"""2. scale gradient"""
+        scale_grad = -(x - beta)/scale + x_hat
+        scale_grad[(x - beta)/scale <= lower_bound] = float(lower_bound)
+        scale_grad[(x - beta)/scale >= upper_bound] = float(upper_bound)
+        scale_grad = (scale_grad * grad_output).sum(dim=(0, 2, 3), keepdim=True) / math.sqrt(x.numel() * upper_bound) 
+
+        r"""3. offset gradient"""
+        beta_grad = torch.zeros_like(x)
+        beta_grad[(x-beta)/scale <= lower_bound] = 1
+        beta_grad[(x-beta)/scale >= upper_bound] = 1
+        beta_grad = (beta_grad * grad_output).sum(dim=(0, 2, 3), keepdim=True) / math.sqrt(x.numel() * upper_bound) 
+
+
+        return x_grad, scale_grad, beta_grad, None, None, None, None, None

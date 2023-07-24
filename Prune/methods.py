@@ -1,4 +1,5 @@
 import torch
+import copy
 
 def Pruning1(qtensor, fptensor):
     _, C, H, W = qtensor.shape
@@ -7,8 +8,10 @@ def Pruning1(qtensor, fptensor):
     for i in range(C):
         mask = torch.ones_like(qtensor)
         mask[:, C, ...].fill_(0)
-        q_take = torch.masked_select(qtensor, mask)
-        fp_take = torch.masked_select(fptensor, mask)
+        # q_take = torch.masked_select(qtensor, mask)
+        # fp_take = torch.masked_select(fptensor, mask)
+        q_take = qtensor * mask
+        fp_take = fp_take
         result[i] = kldivloss(q_take, fp_take)
     return result.view(-1, C, H, W)
 
