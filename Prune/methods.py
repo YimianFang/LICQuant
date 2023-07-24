@@ -1,11 +1,20 @@
 import torch
 
 def Pruning1(qtensor, fptensor):
-    shape = qtensor.shape
-    result = torch.zeros(qtensor.numel())
+    _, C, H, W = qtensor.shape
+    result = torch.zeros(C)
     kldivloss = torch.nn.KLDivLoss()
-    for i in range(qtensor.numel()):
-        q_take = torch.index_select(qtensor, i)
-        fp_take = torch.index_select(fptensor, i)
+    for i in range(C):
+        mask = torch.ones_like(qtensor)
+        mask[:, C, ...].fill_(0)
+        q_take = torch.masked_select(qtensor, mask)
+        fp_take = torch.masked_select(fptensor, mask)
         result[i] = kldivloss(q_take, fp_take)
-    return result.view(shape)
+    return result.view(-1, C, H, W)
+
+def Pruning2(qtensor):
+    _, C, H, W = qtensor.shape
+    maxv = qtensor.amax(dim=(0, 2, 3))
+    minv = qtensor.amin(dim=(0, 2, 3))
+    gapv = maxv - minv
+    return gapv
