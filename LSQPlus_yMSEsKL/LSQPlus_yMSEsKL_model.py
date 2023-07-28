@@ -28,7 +28,7 @@ class LSQPlusScaleHyperprior(CompressionModel):
         M = fpmodel.M
         super().__init__(**kwargs)
 
-        self.entropy_bottleneck = copy.deepcopy(fpmodel.entropy_bottleneck)
+        self.entropy_bottleneck = EntropyBottleneck(N)
         self.entropy_bottleneck_fp = copy.deepcopy(fpmodel.entropy_bottleneck)
 
         self.g_a = nn.Sequential(
@@ -76,22 +76,22 @@ class LSQPlusScaleHyperprior(CompressionModel):
             LSQPlusConv2d(fpmodel.h_a[4], signed=True),
         )
         
-        self.h_a_fp = copy.deepcopy(fpmodel.h_a)
+        # self.h_a_fp = copy.deepcopy(fpmodel.h_a)
         
-        # self.h_a_fp = nn.Sequential(
-        #     conv(M, N, stride=1, kernel_size=3),
-        #     nn.LeakyReLU(inplace=True),
-        #     conv(N, N, stride=2, kernel_size=5),
-        #     nn.LeakyReLU(inplace=True),
-        #     conv(N, N, stride=2, kernel_size=5),
-        # )
+        self.h_a_fp = nn.Sequential(
+            conv(M, N, stride=1, kernel_size=3),
+            nn.LeakyReLU(inplace=True),
+            conv(N, N, stride=2, kernel_size=5),
+            nn.LeakyReLU(inplace=True),
+            conv(N, N, stride=2, kernel_size=5),
+        )
         
-        # self.h_a_fp[0].weight = fpmodel.h_a[0].weight
-        # self.h_a_fp[2].weight = fpmodel.h_a[2].weight
-        # self.h_a_fp[4].weight = fpmodel.h_a[4].weight
-        # # self.g_a_fp[0].bias = fpmodel.g_a[0].bias
-        # # self.g_a_fp[2].bias = fpmodel.g_a[2].bias
-        # # self.g_a_fp[4].bias = fpmodel.g_a[4].bias
+        self.h_a_fp[0].weight = fpmodel.h_a[0].weight
+        self.h_a_fp[2].weight = fpmodel.h_a[2].weight
+        self.h_a_fp[4].weight = fpmodel.h_a[4].weight
+        # self.g_a_fp[0].bias = fpmodel.g_a[0].bias
+        # self.g_a_fp[2].bias = fpmodel.g_a[2].bias
+        # self.g_a_fp[4].bias = fpmodel.g_a[4].bias
 
         self.h_s = nn.Sequential(
             LSQPlusConvTranspose2d(fpmodel.h_s[0]),
@@ -102,24 +102,24 @@ class LSQPlusScaleHyperprior(CompressionModel):
             nn.ReLU(),
         )
         
-        self.h_s_fp = copy.deepcopy(fpmodel.h_s)
+        # self.h_s_fp = copy.deepcopy(fpmodel.h_s)
          
-        # self.h_s_fp = nn.Sequential(
-        #     deconv(N, M, stride=2, kernel_size=5),
-        #     nn.LeakyReLU(inplace=True),
-        #     deconv(M, M * 3 // 2, stride=2, kernel_size=5),
-        #     nn.LeakyReLU(inplace=True),
-        #     conv(M * 3 // 2, M * 2, stride=1, kernel_size=3),
-        # )
+        self.h_s_fp = nn.Sequential(
+            deconv(N, M, stride=2, kernel_size=5),
+            nn.LeakyReLU(inplace=True),
+            deconv(M, M * 3 // 2, stride=2, kernel_size=5),
+            nn.LeakyReLU(inplace=True),
+            conv(M * 3 // 2, M * 2, stride=1, kernel_size=3),
+        )
         
-        # self.h_s_fp[0].weight = fpmodel.h_s[0].weight
-        # self.h_s_fp[2].weight = fpmodel.h_s[2].weight
-        # self.h_s_fp[4].weight = fpmodel.h_s[4].weight
-        # # self.h_s_fp[0].bias = fpmodel.h_s[0].bias
-        # # self.h_s_fp[2].bias = fpmodel.h_s[2].bias
-        # # self.h_s_fp[4].bias = fpmodel.h_s[4].bias
+        self.h_s_fp[0].weight = fpmodel.h_s[0].weight
+        self.h_s_fp[2].weight = fpmodel.h_s[2].weight
+        self.h_s_fp[4].weight = fpmodel.h_s[4].weight
+        # self.h_s_fp[0].bias = fpmodel.h_s[0].bias
+        # self.h_s_fp[2].bias = fpmodel.h_s[2].bias
+        # self.h_s_fp[4].bias = fpmodel.h_s[4].bias
 
-        self.gaussian_conditional = fpmodel.gaussian_conditional
+        self.gaussian_conditional = GaussianConditional(None)
         self.N = int(N)
         self.M = int(M)
 

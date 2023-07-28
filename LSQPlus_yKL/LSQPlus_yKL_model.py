@@ -28,7 +28,7 @@ class LSQPlusScaleHyperprior(CompressionModel):
         M = fpmodel.M
         super().__init__(**kwargs)
 
-        self.entropy_bottleneck = fpmodel.entropy_bottleneck
+        self.entropy_bottleneck = EntropyBottleneck(N)
 
         self.g_a = nn.Sequential(
             LSQPlusConv2d(fpmodel.g_a[0], signed=True),
@@ -42,7 +42,7 @@ class LSQPlusScaleHyperprior(CompressionModel):
 
         # self.g_a_fp = copy.deepcopy(fpmodel.g_a) # 1
         
-        self.g_a_fp = nn.Sequential( # 2
+        self.g_a_fp = nn.Sequential( 
             conv(3, N),
             GDN(N),
             conv(N, N),
@@ -84,7 +84,7 @@ class LSQPlusScaleHyperprior(CompressionModel):
             nn.ReLU(),
         )
 
-        self.gaussian_conditional = fpmodel.gaussian_conditional
+        self.gaussian_conditional = GaussianConditional(None)
         self.N = int(N)
         self.M = int(M)
 

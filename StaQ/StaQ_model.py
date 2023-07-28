@@ -67,8 +67,7 @@ class StaQScaleHyperprior(CompressionModel):
             nn.ReLU(),
         )
 
-        self.entropy_bottleneck = fpmodel.entropy_bottleneck
-        self.gaussian_conditional = fpmodel.gaussian_conditional
+        self.gaussian_conditional = GaussianConditional(None)
         self.N = int(N)
         self.M = int(M)
 
