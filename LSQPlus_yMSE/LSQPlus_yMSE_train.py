@@ -40,7 +40,7 @@ class RateDistortionLoss(nn.Module):
         out["mse_loss"] = self.mse(output["x_hat"], target)
         out["msey_loss"] = self.msey(output["y_hat"], output["y_fp_hat"])
         out["loss"] = self.lmbda * 255**2 * out["mse_loss"] + out["bpp_loss"]
-        out["loss"] += out["msey_loss"] *1e-1
+        out["loss"] += out["msey_loss"] *1e1
 
         return out
 
