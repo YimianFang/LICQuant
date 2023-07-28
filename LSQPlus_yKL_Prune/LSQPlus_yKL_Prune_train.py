@@ -17,6 +17,7 @@ from compressai.datasets import ImageFolder
 
 from LSQPlus_yKL_Prune.LSQPlus_yKL_Prune_model import LSQPlusScaleHyperprior
 from compressai.zoo import models
+from Prune import *
 
 class RateDistortionLoss(nn.Module):
     """Custom rate distortion loss with a Lagrangian parameter."""
@@ -199,6 +200,8 @@ def test_epoch(epoch, model):
             d = d.to(device)
             out_net = model(d)
             out_criterion = criterion(out_net, d)
+            
+            mask_result = Pruning1(out_criterion['y_hat'], out_criterion['y_fp_hat'])
 
             aux_loss.update(model.aux_loss())
             bpp_loss.update(out_criterion["bpp_loss"])

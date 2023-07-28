@@ -28,7 +28,8 @@ class LSQPlusScaleHyperprior(CompressionModel):
         M = fpmodel.M
         super().__init__(**kwargs)
 
-        self.entropy_bottleneck = fpmodel.entropy_bottleneck
+        self.entropy_bottleneck = copy.deepcopy(fpmodel.entropy_bottleneck)
+        self.entropy_bottleneck_fp = copy.deepcopy(fpmodel.entropy_bottleneck)
 
         self.g_a = nn.Sequential(
             LSQPlusConv2d(fpmodel.g_a[0], signed=True),
@@ -40,9 +41,9 @@ class LSQPlusScaleHyperprior(CompressionModel):
             LSQPlusConv2d(fpmodel.g_a[6], signed=True),
         )
 
-        # self.g_a_fp = copy.deepcopy(fpmodel.g_a) # 1
+        # self.g_a_fp = copy.deepcopy(fpmodel.g_a)
         
-        self.g_a_fp = nn.Sequential( # 2
+        self.g_a_fp = nn.Sequential(
             conv(3, N),
             GDN(N),
             conv(N, N),
@@ -74,6 +75,23 @@ class LSQPlusScaleHyperprior(CompressionModel):
             nn.ReLU(),
             LSQPlusConv2d(fpmodel.h_a[4], signed=True),
         )
+        
+        self.h_a_fp = copy.deepcopy(fpmodel.h_a)
+        
+        # self.h_a_fp = nn.Sequential(
+        #     conv(M, N, stride=1, kernel_size=3),
+        #     nn.LeakyReLU(inplace=True),
+        #     conv(N, N, stride=2, kernel_size=5),
+        #     nn.LeakyReLU(inplace=True),
+        #     conv(N, N, stride=2, kernel_size=5),
+        # )
+        
+        # self.h_a_fp[0].weight = fpmodel.h_a[0].weight
+        # self.h_a_fp[2].weight = fpmodel.h_a[2].weight
+        # self.h_a_fp[4].weight = fpmodel.h_a[4].weight
+        # # self.g_a_fp[0].bias = fpmodel.g_a[0].bias
+        # # self.g_a_fp[2].bias = fpmodel.g_a[2].bias
+        # # self.g_a_fp[4].bias = fpmodel.g_a[4].bias
 
         self.h_s = nn.Sequential(
             LSQPlusConvTranspose2d(fpmodel.h_s[0]),
@@ -83,6 +101,23 @@ class LSQPlusScaleHyperprior(CompressionModel):
             LSQPlusConv2d(fpmodel.h_s[4]),
             nn.ReLU(),
         )
+        
+        self.h_s_fp = copy.deepcopy(fpmodel.h_s)
+         
+        # self.h_s_fp = nn.Sequential(
+        #     deconv(N, M, stride=2, kernel_size=5),
+        #     nn.LeakyReLU(inplace=True),
+        #     deconv(M, M * 3 // 2, stride=2, kernel_size=5),
+        #     nn.LeakyReLU(inplace=True),
+        #     conv(M * 3 // 2, M * 2, stride=1, kernel_size=3),
+        # )
+        
+        # self.h_s_fp[0].weight = fpmodel.h_s[0].weight
+        # self.h_s_fp[2].weight = fpmodel.h_s[2].weight
+        # self.h_s_fp[4].weight = fpmodel.h_s[4].weight
+        # # self.h_s_fp[0].bias = fpmodel.h_s[0].bias
+        # # self.h_s_fp[2].bias = fpmodel.h_s[2].bias
+        # # self.h_s_fp[4].bias = fpmodel.h_s[4].bias
 
         self.gaussian_conditional = fpmodel.gaussian_conditional
         self.N = int(N)
@@ -104,18 +139,23 @@ class LSQPlusScaleHyperprior(CompressionModel):
     def forward(self, x):
         y = self.g_a(x)
         y_fp = self.g_a_fp(x)
-        y_fp_hat = roundSTE.apply(y_fp)
         z = self.h_a(torch.abs(y))
+        z_fp = self.h_a_fp(torch.abs(y_fp))
         z_hat, z_likelihoods = self.entropy_bottleneck(z)
+        z_hat_fp, _ = self.entropy_bottleneck_fp(z_fp)
         scales_hat = self.h_s(z_hat)
+        scales_hat_fp = self.h_s_fp(z_hat_fp)
         _, y_likelihoods = self.gaussian_conditional(y, scales_hat)
         y_hat = roundSTE.apply(y)
+        y_fp_hat = roundSTE.apply(y_fp)
         x_hat = self.g_s(y_hat)
 
         return {
             "x_hat": x_hat,
             "y_hat": y_hat,
             "y_fp_hat": y_fp_hat,
+            "scales_hat": scales_hat,
+            "scales_hat_fp": scales_hat_fp,
             "likelihoods": {"y": y_likelihoods, "z": z_likelihoods},
         }
     

@@ -289,7 +289,9 @@ class GDN_v5(GDN):
         return out
 
 class GDN_v6(GDN):
-
+    """
+    moving average for qclip + embedding
+    """
     def __init__(self, N, num=128, inverse=False, momentum=0.9):
         super().__init__(N, inverse)
         self.register_buffer("state", torch.tensor(True))
@@ -347,11 +349,13 @@ class GDN_v6(GDN):
 
         return out
 
+# TODO: 固定训练后得到的off和scl用于训练embedding.weight
 class GDN_x2Q(GDN):
     """
-    grad needs to be small enough!
+    learnable quantization scl and offset, prepared for embedding
+    ATTENTION! Grad needs to be small enough! 1e-8
     """
-    def __init__(self, N, num=128, inverse=False):
+    def __init__(self, N, num=256, inverse=False):
         super().__init__(N, inverse)
         self.register_buffer("state", torch.tensor(True))
         # self.offset = nn.Parameter(torch.zeros_like(self.beta))

@@ -15,15 +15,26 @@ from torchvision import transforms
 
 from compressai.datasets import ImageFolder
 
-from LSQ_model_save_inout import LSQScaleHyperprior
+from LSQPlus_yMSEsKL_model import LSQPlusScaleHyperprior
 from compressai.zoo import models
 
+# TODO
+class GaussKLDivLoss(nn.Module):
+    """KL(N1 | N2) = log(sigma2/sigma1)-1/2+(sigma1^2+(miu1-miu2)^2)/2sigma2^2"""
+    def forward(self,sigma1, sigma2, miu1 = 0, miu2 = 0):
+        out = torch.log(sigma2/sigma1) - 1 / 2 + (sigma1**2 + (miu1 - miu2)**2 / (2 * sigma2**2))
+        return out
+        
+    
 class RateDistortionLoss(nn.Module):
     """Custom rate distortion loss with a Lagrangian parameter."""
 
     def __init__(self, lmbda=1e-2):
         super().__init__()
         self.mse = nn.MSELoss()
+        self.msey = nn.MSELoss()
+        # self.kl = nn.KLDivLoss(log_target=True)
+        self.kl = GaussKLDivLoss()
         self.lmbda = lmbda
 
     def forward(self, output, target):
@@ -36,7 +47,11 @@ class RateDistortionLoss(nn.Module):
             for likelihoods in output["likelihoods"].values()
         )
         out["mse_loss"] = self.mse(output["x_hat"], target)
+        out["msey_loss"] = self.msey(output["y_hat"], output["y_fp_hat"])
+        out["kl_loss"] = self.kl(output["scales_hat"], output["scales_hat_fp"])
         out["loss"] = self.lmbda * 255**2 * out["mse_loss"] + out["bpp_loss"]
+        out["loss"] += out["msey_loss"]
+        out["loss"] += out["kl_loss"]
 
         return out
 
@@ -71,11 +86,26 @@ def configure_optimizers(net, args):
     """Separate parameters for the main optimizer and the auxiliary optimizer.
     Return two optimizers"""
 
-    parameters = {
-        n
-        for n, p in net.named_parameters()
-        if not n.endswith(".quantiles") and p.requires_grad
-    }
+    if args.training_params == "encoder":
+        parameters = {
+            n
+            for n, p in net.named_parameters()
+            if not n.endswith(".quantiles") and "_fp" not in n  and ("g_s" not in n and "h_a" not in n and "h_s" not in n) and p.requires_grad
+        }
+    elif args.training_params == "decoder":
+        parameters = {
+            n
+            for n, p in net.named_parameters()
+            if not n.endswith(".quantiles") and "_fp" not in n  and ("g_a" not in n) and p.requires_grad
+        }
+    elif args.training_params == "e2e":
+        parameters = {
+            n
+            for n, p in net.named_parameters()
+            if not n.endswith(".quantiles") and "_fp" not in n and p.requires_grad
+        }
+
+
     aux_parameters = {
         n
         for n, p in net.named_parameters()
@@ -88,7 +118,7 @@ def configure_optimizers(net, args):
     union_params = parameters | aux_parameters
 
     assert len(inter_params) == 0
-    assert len(union_params) - len(params_dict.keys()) == 0
+    # assert len(union_params) - len(params_dict.keys()) == 0
 
     optimizer = optim.Adam(
         (params_dict[n] for n in sorted(parameters)),
@@ -131,9 +161,11 @@ def train_one_epoch(
                 f"Train epoch {epoch}: ["
                 f"{i*len(d)}/{len(train_dataloader.dataset)}"
                 f" ({100. * i / len(train_dataloader):.0f}%)]"
-                f'\tLoss: {out_criterion["loss"].item():.3f} |'
+                f'\tLoss: {out_criterion["loss"].item():.3e} |'
                 f'\tPSNR: {cntPSNR(out_criterion["mse_loss"].item()):.3f} |'
                 f'\tMSE loss: {out_criterion["mse_loss"].item():.3f} |'
+                f'\tMSEy loss: {out_criterion["msey_loss"].item():.2e} |'
+                f'\tKL loss: {out_criterion["kl_loss"].item():.2e} |'
                 f'\tBpp loss: {out_criterion["bpp_loss"].item():.2f} |'
                 f"\tAux loss: {aux_loss.item():.2f}"
             )
@@ -166,6 +198,8 @@ def test_epoch(epoch, model):
     device = next(model.parameters()).device
 
     loss = AverageMeter()
+    msey_loss = AverageMeter()
+    kl_loss = AverageMeter()
     bpp_loss = AverageMeter()
     mse_loss = AverageMeter()
     aux_loss = AverageMeter()
@@ -178,14 +212,18 @@ def test_epoch(epoch, model):
 
             aux_loss.update(model.aux_loss())
             bpp_loss.update(out_criterion["bpp_loss"])
+            msey_loss.update(out_criterion["msey_loss"])
+            kl_loss.update(out_criterion["kl_loss"])
             loss.update(out_criterion["loss"])
             mse_loss.update(out_criterion["mse_loss"])
 
     print(
         f"Test epoch {epoch}: Average losses:"
-        f"\tLoss: {loss.avg:.3f} |"
+        f"\tLoss: {loss.avg:.3e} |"
         f'\tPSNR: {cntPSNR(mse_loss.avg):.3f} |'
         f"\tMSE loss: {mse_loss.avg:.3f} |"
+        f"\tMSEy loss: {msey_loss.avg:.2e} |"
+        f"\tKL loss: {kl_loss.avg:.2e} |"
         f"\tBpp loss: {bpp_loss.avg:.2f} |"
         f"\tAux loss: {aux_loss.avg:.2f}"
     )
@@ -194,14 +232,14 @@ def test_epoch(epoch, model):
 
 
 def save_checkpoint(state, is_best, step):
-    root = "./checkpoint/LSQ"
+    root = "/data/fym/LICQuant/checkpoint/" + subroot
     if not os.path.exists(root):
         os.mkdir(root)
     filename = os.path.join(root, "epoch_{}_step_{}_loss_{:.4f}.pth.tar".format(state["epoch"], step, state["loss"]))
     torch.save(state, filename)
     if is_best:
         print("New Best Checkpoint Saved!")
-        shutil.copyfile(filename, os.path.join(root, "checkpoint_best_loss.pth.tar"))
+        shutil.copyfile(filename, os.path.join(root, "checkpoint_best_loss_" + cp_order + "_" + training_params + ".pth.tar"))
     print("\n")
 
 def cntPSNR(mse):
@@ -215,7 +253,16 @@ def cntPSNR(mse):
 def parse_args(argv):
     parser = argparse.ArgumentParser(description="Example training script.")
     parser.add_argument(
+        "-sr", "--subroot", type=str, required=True, help="the subroot path to save checkpoints"
+    )
+    parser.add_argument(
         "-d", "--dataset", type=str, required=True, help="Training dataset"
+    )
+    parser.add_argument(
+        "-tp", "--training_params", type=str, required=True, help="the parameters to train"
+    )
+    parser.add_argument(
+        "-ord", "--cp_order", type=str, required=True, help="the order of checkpoint"
     )
     parser.add_argument(
         "-e",
@@ -316,7 +363,10 @@ def main(argv):
         torch.cuda.set_device(args.cuda_id)
         device = device + ':' + str(args.cuda_id)
 
-    global train_dataloader, test_dataloader, criterion, lr_scheduler, best_loss
+    global train_dataloader, test_dataloader, criterion, lr_scheduler, best_loss, subroot, training_params, cp_order
+    subroot = args.subroot
+    training_params = args.training_params
+    cp_order = args.cp_order
     train_dataloader = DataLoader(
         train_dataset,
         batch_size=args.batch_size,
@@ -334,7 +384,7 @@ def main(argv):
     )
 
     prefpnet = models["bmshj2018-hyperprior"](quality=args.quality, metric="mse", pretrained=True) # quality=5, lambda=0.0250, N=128, M=192
-    net = LSQScaleHyperprior(prefpnet)
+    net = LSQPlusScaleHyperprior(prefpnet)
     # fpstate = {}
     # for k in net.state_dict():
     #     if k in prefpnet.state_dict():
@@ -352,8 +402,8 @@ def main(argv):
     lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, "min")
     criterion = RateDistortionLoss(lmbda=args.lmbda)
 
-    print("===The Performance of The Pre-trained Floating Point Model===")
-    test_epoch(0, prefpnet.to(device))
+    # print("===The Performance of The Pre-trained Floating Point Model===")
+    # test_epoch(0, prefpnet.to(device))
 
     last_epoch = 0
     best_loss = float("inf")
@@ -363,8 +413,6 @@ def main(argv):
         last_epoch = checkpoint["epoch"] 
         best_loss = checkpoint["loss"]
         net.load_state_dict(checkpoint["state_dict"])
-        optimizer.load_state_dict(checkpoint["optimizer"])
-        aux_optimizer.load_state_dict(checkpoint["aux_optimizer"])
         lr_scheduler.load_state_dict(checkpoint["lr_scheduler"])
         print("===The Performance of The Quantized Checkpoint===")
         test_epoch(last_epoch, net)

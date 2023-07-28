@@ -11,7 +11,7 @@ def Pruning1(qtensor, fptensor):
         # q_take = torch.masked_select(qtensor, mask)
         # fp_take = torch.masked_select(fptensor, mask)
         q_take = qtensor * mask
-        fp_take = fp_take
+        fp_take = fptensor
         result[i] = kldivloss(q_take, fp_take)
     return result.view(-1, C, H, W)
 

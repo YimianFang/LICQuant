@@ -65,7 +65,8 @@ class LSQScaleHyperprior(CompressionModel):
             nn.ReLU(),
         )
 
-        self.gaussian_conditional = GaussianConditional(None)
+        self.entropy_bottleneck = fpmodel.entropy_bottleneck
+        self.gaussian_conditional = fpmodel.gaussian_conditional
         self.N = int(N)
         self.M = int(M)
 

@@ -28,8 +28,6 @@ class LSQScaleHyperprior(CompressionModel):
         M = fpmodel.M
         super().__init__(**kwargs)
 
-        self.entropy_bottleneck = EntropyBottleneck(N)
-
         self.g_a = nn.Sequential(
             QuanConv2d(fpmodel.g_a[0], LsqQuan(8), LsqQuan(8, per_channel=False)),
             fpmodel.g_a[1], # GDN保留
@@ -84,7 +82,8 @@ class LSQScaleHyperprior(CompressionModel):
             nn.ReLU(),
         )
 
-        self.gaussian_conditional = GaussianConditional(None)
+        self.entropy_bottleneck = fpmodel.entropy_bottleneck
+        self.gaussian_conditional = fpmodel.gaussian_conditional
         self.N = int(N)
         self.M = int(M)
 

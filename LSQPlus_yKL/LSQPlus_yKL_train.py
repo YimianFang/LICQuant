@@ -37,8 +37,15 @@ class RateDistortionLoss(nn.Module):
             for likelihoods in output["likelihoods"].values()
         )
         out["mse_loss"] = self.mse(output["x_hat"], target)
+        
+        # pp = F.log_softmax(output["y_hat"].permute(1, 0, 2, 3).reshape(output["y_hat"].shape[1], -1),dim=1)
+        # qq = F.softmax(output["y_fp_hat"].permute(1, 0, 2, 3).reshape(output["y_fp_hat"].shape[1], -1),dim=1)
+        # out["kl_loss"] = self.kl(pp, qq)
+        
         out["kl_loss"] = torch.abs(self.kl(output["y_hat"], output["y_fp_hat"]))
-        if out["kl_loss"] * 1e-10 > 1:
+        if out["kl_loss"] * 1e-20 > 1:
+            kl_lmbda = 1e-20
+        elif out["kl_loss"] * 1e-10 > 1:
             kl_lmbda = 1e-10
         else:
             kl_lmbda = 1e4
@@ -82,19 +89,25 @@ def configure_optimizers(net, args):
         parameters = {
             n
             for n, p in net.named_parameters()
-            if not n.endswith(".quantiles") and "_fp" not in n  and ("g_s" not in n and "h_a" not in n and "h_s" not in n) and p.requires_grad
+            if not n.endswith(".quantiles") and "_fp" not in n  and ("g_s" not in n and "h_a" not in n and "h_s" not in n) and p.requires_grad  # 1
+            # if not n.endswith(".quantiles") and ("g_s" not in n and "h_a" not in n and "h_s" not in n) and p.requires_grad  # 2
+            # if not n.endswith(".quantiles") and ("_fp" not in n or "bias" in n or "beta" in n or "gamma" in n)  and ("g_s" not in n and "h_a" not in n and "h_s" not in n) and p.requires_grad  # 3
         }
     elif args.training_params == "decoder":
         parameters = {
             n
             for n, p in net.named_parameters()
             if not n.endswith(".quantiles") and "_fp" not in n  and ("g_a" not in n) and p.requires_grad
+            # if not n.endswith(".quantiles") and ("g_a" not in n) and p.requires_grad
+            # if not n.endswith(".quantiles") and ("_fp" not in n or "bias" in n or "beta" in n or "gamma" in n)  and ("g_a" not in n) and p.requires_grad
         }
     elif args.training_params == "e2e":
         parameters = {
             n
             for n, p in net.named_parameters()
             if not n.endswith(".quantiles") and "_fp" not in n and p.requires_grad
+            # if not n.endswith(".quantiles") and p.requires_grad
+            # if not n.endswith(".quantiles") and ("_fp" not in n or "bias" in n or "beta" in n or "gamma" in n) and p.requires_grad
         }
 
 
