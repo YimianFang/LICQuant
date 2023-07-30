@@ -18,13 +18,24 @@ from compressai.datasets import ImageFolder
 from LSQPlus_yMSEsKL_model import LSQPlusScaleHyperprior
 from compressai.zoo import models
 
-# TODO
+
 class GaussKLDivLoss(nn.Module):
     """KL(N1 | N2) = log(sigma2/sigma1)-1/2+(sigma1^2+(miu1-miu2)^2)/2sigma2^2"""
-    def forward(self,sigma1, sigma2, miu1 = 0, miu2 = 0):
-        out = torch.log(sigma2/sigma1) - 1 / 2 + (sigma1**2 + (miu1 - miu2)**2 / (2 * sigma2**2))
-        return out
+    
+    def __init__(self, method='sum'):
+        super().__init__()
+        self.method = method
         
+    def forward(self,sigma1, sigma2, miu1 = 0, miu2 = 0):
+        sigma1 = sigma1 + 1e-10
+        sigma2 = sigma2 + 1e-10
+        out = torch.log(sigma2/sigma1) - 1 / 2 + (sigma1**2 + (miu1 - miu2)**2) / (2 * sigma2**2)
+        if self.method == 'sum':
+            return out.sum()
+        elif self.method == 'mean':
+            return out.mean()
+        elif self.method == 'batchmean':
+            return out.sum() / out.shape[0]
     
 class RateDistortionLoss(nn.Module):
     """Custom rate distortion loss with a Lagrangian parameter."""
@@ -34,7 +45,7 @@ class RateDistortionLoss(nn.Module):
         self.mse = nn.MSELoss()
         self.msey = nn.MSELoss()
         # self.kl = nn.KLDivLoss(log_target=True)
-        self.kl = GaussKLDivLoss()
+        self.kl = GaussKLDivLoss('mean')
         self.lmbda = lmbda
 
     def forward(self, output, target):
@@ -46,12 +57,15 @@ class RateDistortionLoss(nn.Module):
             (torch.log(likelihoods).sum() / (-math.log(2) * num_pixels))
             for likelihoods in output["likelihoods"].values()
         )
+        # print("y", torch.log(output["likelihoods"]["y"]).sum() / (-math.log(2) * num_pixels))
+        # print("z", torch.log(output["likelihoods"]["z"]).sum() / (-math.log(2) * num_pixels))
         out["mse_loss"] = self.mse(output["x_hat"], target)
-        out["msey_loss"] = self.msey(output["y_hat"], output["y_fp_hat"])
+        out["msey_loss"] = self.msey(output["y_hat"], output["y_hat_fp"])
         out["kl_loss"] = self.kl(output["scales_hat"], output["scales_hat_fp"])
         out["loss"] = self.lmbda * 255**2 * out["mse_loss"] + out["bpp_loss"]
-        out["loss"] += out["msey_loss"]
-        out["loss"] += out["kl_loss"]
+        out["loss"] += out["msey_loss"] * 1e-1
+        kl_lmbda = 1e-10
+        out["loss"] += out["kl_loss"] * kl_lmbda
 
         return out
 
@@ -91,18 +105,27 @@ def configure_optimizers(net, args):
             n
             for n, p in net.named_parameters()
             if not n.endswith(".quantiles") and "_fp" not in n  and ("g_s" not in n and "h_a" not in n and "h_s" not in n) and p.requires_grad
+            # if not n.endswith(".quantiles")  and ("g_s" not in n and "h_a" not in n and "h_s" not in n) and p.requires_grad
         }
     elif args.training_params == "decoder":
         parameters = {
             n
             for n, p in net.named_parameters()
             if not n.endswith(".quantiles") and "_fp" not in n  and ("g_a" not in n) and p.requires_grad
+            # if not n.endswith(".quantiles") and ("g_a" not in n) and p.requires_grad
         }
     elif args.training_params == "e2e":
         parameters = {
             n
             for n, p in net.named_parameters()
             if not n.endswith(".quantiles") and "_fp" not in n and p.requires_grad
+            # if not n.endswith(".quantiles") and p.requires_grad
+        }
+    elif args.training_params == "he2e":
+        parameters = {
+            n
+            for n, p in net.named_parameters()
+            if not n.endswith(".quantiles") and "_fp" not in n and ("g_s" not in n and "g_a" not in n) and p.requires_grad
         }
 
 
@@ -412,7 +435,13 @@ def main(argv):
         checkpoint = torch.load(args.checkpoint, map_location=device)
         last_epoch = checkpoint["epoch"] 
         best_loss = checkpoint["loss"]
-        net.load_state_dict(checkpoint["state_dict"])
+        pre_state = checkpoint["state_dict"]
+        state = net.state_dict()
+        new_state = {}
+        for k, v in state.items():
+            if k in pre_state: new_state[k] = pre_state[k]
+            else: new_state[k] = v
+        net.load_state_dict(new_state)
         lr_scheduler.load_state_dict(checkpoint["lr_scheduler"])
         print("===The Performance of The Quantized Checkpoint===")
         test_epoch(last_epoch, net)

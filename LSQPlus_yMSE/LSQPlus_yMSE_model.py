@@ -40,22 +40,22 @@ class LSQPlusScaleHyperprior(CompressionModel):
             LSQPlusConv2d(fpmodel.g_a[6], signed=True),
         )
 
-        # self.g_a_fp = copy.deepcopy(fpmodel.g_a)  # 1
+        self.g_a_fp = copy.deepcopy(fpmodel.g_a)  # 1
         
-        self.g_a_fp = nn.Sequential(   # 2
-            conv(3, N),
-            GDN(N),
-            conv(N, N),
-            GDN(N),
-            conv(N, N),
-            GDN(N),
-            conv(N, M),
-        )
+        # self.g_a_fp = nn.Sequential(   # 2
+        #     conv(3, N),
+        #     GDN(N),
+        #     conv(N, N),
+        #     GDN(N),
+        #     conv(N, N),
+        #     GDN(N),
+        #     conv(N, M),
+        # )
         
-        self.g_a_fp[0].weight = fpmodel.g_a[0].weight
-        self.g_a_fp[2].weight = fpmodel.g_a[2].weight
-        self.g_a_fp[4].weight = fpmodel.g_a[4].weight
-        self.g_a_fp[6].weight = fpmodel.g_a[6].weight
+        # self.g_a_fp[0].weight = fpmodel.g_a[0].weight
+        # self.g_a_fp[2].weight = fpmodel.g_a[2].weight
+        # self.g_a_fp[4].weight = fpmodel.g_a[4].weight
+        # self.g_a_fp[6].weight = fpmodel.g_a[6].weight
 
         self.g_s = nn.Sequential(
             LSQPlusConvTranspose2d(fpmodel.g_s[0], signed=True),

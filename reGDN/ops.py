@@ -349,6 +349,41 @@ class GDN_v6(GDN):
 
         return out
 
+class GDN_v7(GDN):
+
+    def __init__(self, N, inverse=False):
+        super().__init__(N, inverse)
+        self.register_buffer("state", torch.tensor(True))
+        self.offset = nn.Parameter(torch.zeros_like(self.beta))
+        self.scl = nn.Parameter(torch.ones_like(self.beta))
+            
+    def forward(self, x: Tensor) -> Tensor:
+        
+        _, C, _, _ = x.size()
+        
+        gamma = self.gamma_reparam(self.gamma)
+        gamma = gamma.reshape(C, C, 1, 1)
+        beta = self.beta_reparam(self.beta) #
+        # beta = beta.reshape(1, -1, 1, 1) #
+        scl = self.scl.reshape(1, -1, 1, 1)
+        
+        if self.state:
+            #TODO
+            self.state = False
+        s2 = self.s2.reshape(1, -1, 1, 1)
+        offset = self.offset.reshape(1, -1, 1, 1)
+        gamma = gamma.detach()
+        beta = beta.detach()
+        
+        if self.inverse:
+            norm = torch.sqrt(F.conv2d(s2**2, gamma, beta))
+        else:
+            norm = torch.rsqrt(F.conv2d(s2**2, gamma, beta))
+            
+        out = s1 * x * norm + offset
+
+        return out
+    
 # TODO: 固定训练后得到的off和scl用于训练embedding.weight
 class GDN_x2Q(GDN):
     """
