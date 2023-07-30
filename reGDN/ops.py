@@ -354,33 +354,33 @@ class GDN_v7(GDN):
     def __init__(self, N, inverse=False):
         super().__init__(N, inverse)
         self.register_buffer("state", torch.tensor(True))
-        self.offset = nn.Parameter(torch.zeros_like(self.beta))
-        self.scl = nn.Parameter(torch.ones_like(self.beta))
             
     def forward(self, x: Tensor) -> Tensor:
         
         _, C, _, _ = x.size()
         
         gamma = self.gamma_reparam(self.gamma)
+        
+        zeroidx = gamma.mean(dim=1).topk(32, largest=False)[1]
+        gamma[zeroidx, ...] = 0
+        
         gamma = gamma.reshape(C, C, 1, 1)
+        
         beta = self.beta_reparam(self.beta) #
         # beta = beta.reshape(1, -1, 1, 1) #
-        scl = self.scl.reshape(1, -1, 1, 1)
         
-        if self.state:
-            #TODO
-            self.state = False
-        s2 = self.s2.reshape(1, -1, 1, 1)
-        offset = self.offset.reshape(1, -1, 1, 1)
-        gamma = gamma.detach()
-        beta = beta.detach()
+        norm = F.conv2d(x**2, gamma, beta)
+        
+        # if self.state:
+        #     #TODO
+        #     self.state = False
         
         if self.inverse:
-            norm = torch.sqrt(F.conv2d(s2**2, gamma, beta))
+            norm = torch.sqrt(norm)
         else:
-            norm = torch.rsqrt(F.conv2d(s2**2, gamma, beta))
+            norm = torch.rsqrt(norm)
             
-        out = s1 * x * norm + offset
+        out = x * norm
 
         return out
     

@@ -2,7 +2,7 @@ from compressai.models.google import CompressionModel
 from compressai.entropy_models import EntropyBottleneck, GaussianConditional
 from compressai.layers import GDN, MaskedConv2d
 from compressai.models.utils import conv, deconv, update_registered_buffers
-from utils import *
+from .utils import *
 from reGDN import *
 
 import torch
@@ -33,11 +33,11 @@ class LSQPlusScaleHyperprior(CompressionModel):
 
         self.g_a = nn.Sequential(
             LSQPlusConv2d(fpmodel.g_a[0], signed=True),
-            fpmodel.g_a[1], # GDN保留
+            GDN_v7(N), # GDN保留
             LSQPlusConv2d(fpmodel.g_a[2], signed=True),
-            fpmodel.g_a[3],
+            GDN_v7(N),
             LSQPlusConv2d(fpmodel.g_a[4], signed=True),
-            fpmodel.g_a[5],
+            GDN_v7(N),
             LSQPlusConv2d(fpmodel.g_a[6], signed=True),
         )
 
@@ -60,11 +60,11 @@ class LSQPlusScaleHyperprior(CompressionModel):
 
         self.g_s = nn.Sequential(
             LSQPlusConvTranspose2d(fpmodel.g_s[0], signed=True),
-            fpmodel.g_s[1],
+            GDN_v7(N, inverse=True),
             LSQPlusConvTranspose2d(fpmodel.g_s[2], signed=True),
-            fpmodel.g_s[3],
+            GDN_v7(N, inverse=True),
             LSQPlusConvTranspose2d(fpmodel.g_s[4], signed=True),
-            fpmodel.g_s[5],
+            GDN_v7(N, inverse=True),
             LSQPlusConvTranspose2d(fpmodel.g_s[6], signed=True),
         )
 

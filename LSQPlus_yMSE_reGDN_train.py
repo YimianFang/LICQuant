@@ -15,7 +15,7 @@ from torchvision import transforms
 
 from compressai.datasets import ImageFolder
 
-from LSQPlus_yMSE.LSQPlus_yMSE_model import LSQPlusScaleHyperprior
+from LSQPlus_yMSE_reGDN.LSQPlus_yMSE_reGDN_model import LSQPlusScaleHyperprior
 from compressai.zoo import models
 
 class RateDistortionLoss(nn.Module):
@@ -399,8 +399,14 @@ def main(argv):
         print("Loading", args.checkpoint)
         checkpoint = torch.load(args.checkpoint, map_location=device)
         last_epoch = checkpoint["epoch"] 
-        best_loss = checkpoint["loss"]
-        net.load_state_dict(checkpoint["state_dict"])
+        if int(cp_order) > 0: best_loss = checkpoint["loss"]
+        pre_state = checkpoint["state_dict"]
+        state = net.state_dict()
+        new_state = {}
+        for k, v in state.items():
+            if k in pre_state: new_state[k] = pre_state[k]
+            else: new_state[k] = v
+        net.load_state_dict(new_state)
         lr_scheduler.load_state_dict(checkpoint["lr_scheduler"])
         print("===The Performance of The Quantized Checkpoint===")
         test_epoch(last_epoch, net)
