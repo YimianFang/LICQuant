@@ -15,7 +15,7 @@ from torchvision import transforms
 
 from compressai.datasets import ImageFolder
 
-from LSQPlus_yMSE_reGDN.LSQPlus_yMSE_reGDN_model import LSQPlusScaleHyperprior
+from fpmodel_reGDN.fpmodel_reGDN_model import ScaleHyperprior
 from compressai.zoo import models
 
 class RateDistortionLoss(nn.Module):
@@ -24,7 +24,6 @@ class RateDistortionLoss(nn.Module):
     def __init__(self, lmbda=1e-2):
         super().__init__()
         self.mse = nn.MSELoss()
-        self.msey = nn.MSELoss()
         self.kl = nn.KLDivLoss(log_target=True)
         self.lmbda = lmbda
 
@@ -38,9 +37,7 @@ class RateDistortionLoss(nn.Module):
             for likelihoods in output["likelihoods"].values()
         )
         out["mse_loss"] = self.mse(output["x_hat"], target)
-        out["msey_loss"] = self.msey(output["y_hat"], output["y_fp_hat"])
         out["loss"] = self.lmbda * 255**2 * out["mse_loss"] + out["bpp_loss"]
-        out["loss"] += out["msey_loss"] *1e-1
 
         return out
 
@@ -94,13 +91,6 @@ def configure_optimizers(net, args):
             n
             for n, p in net.named_parameters()
             if not n.endswith(".quantiles") and "_fp" not in n and p.requires_grad
-            # if not n.endswith(".quantiles") and p.requires_grad
-        }
-    elif args.training_params == "e2e_fixgsgdn":
-        parameters = {
-            n
-            for n, p in net.named_parameters()
-            if not n.endswith(".quantiles") and "_fp" not in n and "g_s.1" not in n and "g_s.3" not in n and "g_s.5" not in n and p.requires_grad
             # if not n.endswith(".quantiles") and p.requires_grad
         }
 
@@ -163,7 +153,6 @@ def train_one_epoch(
                 f'\tLoss: {out_criterion["loss"].item():.3e} |'
                 f'\tPSNR: {cntPSNR(out_criterion["mse_loss"].item()):.3f} |'
                 f'\tMSE loss: {out_criterion["mse_loss"].item():.3f} |'
-                f'\tMSEy loss: {out_criterion["msey_loss"].item():.2e} |'
                 f'\tBpp loss: {out_criterion["bpp_loss"].item():.2f} |'
                 f"\tAux loss: {aux_loss.item():.2f}"
             )
@@ -196,7 +185,6 @@ def test_epoch(epoch, model):
     device = next(model.parameters()).device
 
     loss = AverageMeter()
-    msey_loss = AverageMeter()
     bpp_loss = AverageMeter()
     mse_loss = AverageMeter()
     aux_loss = AverageMeter()
@@ -209,7 +197,6 @@ def test_epoch(epoch, model):
 
             aux_loss.update(model.aux_loss())
             bpp_loss.update(out_criterion["bpp_loss"])
-            msey_loss.update(out_criterion["msey_loss"])
             loss.update(out_criterion["loss"])
             mse_loss.update(out_criterion["mse_loss"])
 
@@ -218,7 +205,6 @@ def test_epoch(epoch, model):
         f"\tLoss: {loss.avg:.3e} |"
         f'\tPSNR: {cntPSNR(mse_loss.avg):.3f} |'
         f"\tMSE loss: {mse_loss.avg:.3f} |"
-        f"\tMSEy loss: {msey_loss.avg:.2e} |"
         f"\tBpp loss: {bpp_loss.avg:.2f} |"
         f"\tAux loss: {aux_loss.avg:.2f}"
     )
@@ -379,7 +365,7 @@ def main(argv):
     )
 
     prefpnet = models["bmshj2018-hyperprior"](quality=args.quality, metric="mse", pretrained=True) # quality=5, lambda=0.0250, N=128, M=192
-    net = LSQPlusScaleHyperprior(prefpnet)
+    net = ScaleHyperprior(prefpnet)
     # fpstate = {}
     # for k in net.state_dict():
     #     if k in prefpnet.state_dict():

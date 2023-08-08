@@ -350,6 +350,8 @@ class GDN_v6(GDN):
         return out
 
 class GDN_v7(GDN):
+    """zero gamma layer"""
+    """PERHAPS WORKS"""
 
     def __init__(self, N, inverse=False):
         super().__init__(N, inverse)
@@ -361,7 +363,7 @@ class GDN_v7(GDN):
         
         gamma = self.gamma_reparam(self.gamma)
         
-        zeroidx = gamma.mean(dim=1).topk(32, largest=False)[1]
+        zeroidx = gamma.mean(dim=1).topk(96, largest=False)[1]
         gamma[zeroidx, ...] = 0
         
         gamma = gamma.reshape(C, C, 1, 1)
@@ -381,6 +383,485 @@ class GDN_v7(GDN):
             norm = torch.rsqrt(norm)
             
         out = x * norm
+
+        return out
+    
+class GDN_v8(GDN):
+
+    def __init__(self, N, inverse=False):
+        super().__init__(N, inverse)
+        self.register_buffer("state", torch.tensor(True))
+            
+    def forward(self, x: Tensor) -> Tensor:
+        
+        _, C, _, _ = x.size()
+        
+        beta = self.beta_reparam(self.beta)
+        gamma = self.gamma_reparam(self.gamma)
+        gamma = gamma.reshape(C, C, 1, 1)
+        # beta = beta.reshape(1, -1, 1, 1) #
+        
+        # norm = F.conv2d(x**2, gamma, beta)
+        norm = F.conv2d(torch.abs(x), gamma, beta)
+        
+        # if self.inverse:
+        #     norm = torch.sqrt(norm)
+        # else:
+        #     norm = torch.rsqrt(norm)
+        
+        out = x * norm + x
+
+        return out
+    
+class GDN_v9(GDN):
+
+    def __init__(self, N, inverse=False):
+        super().__init__(N, inverse)
+        self.register_buffer("state", torch.tensor(True))
+        
+        self.s1_reparam = NonNegativeParametrizer()
+        s1 = torch.ones_like(self.beta)
+        s1 = self.s1_reparam.init(s1)
+        self.s1 = nn.Parameter(s1)
+        
+        self.s2_reparam = NonNegativeParametrizer()
+        s2 = 0.005 * torch.ones_like(self.beta)
+        s2 = self.s2_reparam.init(s2)
+        self.s2 = nn.Parameter(s2)
+        
+            
+    def forward(self, x: Tensor) -> Tensor:
+        
+        _, C, _, _ = x.size()
+        
+        beta = self.beta_reparam(self.beta)
+        gamma = self.gamma_reparam(self.gamma)
+        gamma = gamma.reshape(C, C, 1, 1)
+        # if not self.inverse and self.state:
+        #         self.s1.data.copy_(torch.rsqrt(beta))
+        #         self.state = torch.tensor(False)
+        s1 = self.s1.reshape(1, C, 1, 1)
+        s2 = self.s2.reshape(1, C, 1, 1)
+        # beta = beta.reshape(1, -1, 1, 1) #
+        
+        norm = F.conv2d(x**2, gamma, beta) # x**4?
+        # norm = F.conv2d(torch.abs(x), gamma, beta)
+        
+        if self.inverse:
+            out = x * torch.sqrt(norm)
+        else:
+            # out = x - torch.sign(x) * norm
+            out = s1 * x - s2 * torch.sign(x)* norm
+            # out = s1 * x - s2 * x * norm
+
+        return out
+    
+class GDN_v9_STE(GDN):
+
+    def __init__(self, N, inverse=False):
+        super().__init__(N, inverse)
+        self.register_buffer("state", torch.tensor(True))
+        
+        self.s1_reparam = NonNegativeParametrizer()
+        s1 = torch.ones_like(self.beta)
+        s1 = self.s1_reparam.init(s1)
+        self.s1 = nn.Parameter(s1)
+        
+        self.s2_reparam = NonNegativeParametrizer()
+        s2 = 0.005 * torch.ones_like(self.beta)
+        s2 = self.s2_reparam.init(s2)
+        self.s2 = nn.Parameter(s2)
+        
+            
+    def forward(self, x: Tensor) -> Tensor:
+        
+        _, C, _, _ = x.size()
+        
+        beta = self.beta_reparam(self.beta)
+        gamma = self.gamma_reparam(self.gamma)
+        gamma = gamma.reshape(C, C, 1, 1)
+        # if not self.inverse and self.state:
+        #         self.s1.data.copy_(torch.rsqrt(beta))
+        #         self.state = torch.tensor(False)
+        s1 = self.s1.reshape(1, C, 1, 1)
+        s2 = self.s2.reshape(1, C, 1, 1)
+        # beta = beta.reshape(1, -1, 1, 1) #
+        
+        norm = F.conv2d(x**2, gamma, beta) # x**4?
+        # norm = F.conv2d(torch.abs(x), gamma, beta)
+        
+        if self.inverse:
+            out = x * torch.sqrt(norm)
+        else:
+            # out = x - torch.sign(x) * norm
+            out = s1 * x - s2 * signSTE.apply(x)* norm
+            # out = s1 * x - s2 * x * norm
+
+        return out
+    
+class GDN_v10(GDN):
+
+    def __init__(self, N, inverse=False):
+        super().__init__(N, inverse)
+        self.register_buffer("state", torch.tensor(True))
+        self.s1_reparam = NonNegativeParametrizer()
+        s1 = torch.ones_like(self.beta)
+        s1 = self.s1_reparam.init(s1)
+        self.s1 = nn.Parameter(s1)
+        
+        self.s2_reparam = NonNegativeParametrizer()
+        s2 = 0.005 * torch.ones_like(self.beta)
+        s2 = self.s2_reparam.init(s2)
+        self.s2 = nn.Parameter(s2)
+            
+    def forward(self, x: Tensor) -> Tensor:
+        
+        _, C, _, _ = x.size()
+        
+        beta = self.beta_reparam(self.beta)
+        gamma = self.gamma_reparam(self.gamma)
+        gamma = gamma.reshape(C, C, 1, 1)
+        # if not self.inverse and self.state:
+        #         self.s1.data.copy_(torch.rsqrt(beta))
+        #         self.state = torch.tensor(False)
+        s1 = self.s1.reshape(1, C, 1, 1)
+        s2 = self.s2.reshape(1, C, 1, 1)
+        # beta = beta.reshape(1, -1, 1, 1) #
+        
+        # norm = F.conv2d(x**2, gamma, beta) # x**4?
+        # norm = F.conv2d(torch.abs(x), gamma, beta)
+        
+        if self.inverse:
+            norm = F.conv2d(x**2, gamma, beta)
+            out = x * torch.sqrt(norm)
+        else:
+            norm = F.conv2d(torch.abs(x), gamma, beta)
+            sign = torch.sign(x)
+            out = s1 * sign * torch.sqrt(torch.abs(x) + 1e-10) - s2 * sign * norm
+
+        return out
+
+class GDN_v11(GDN):
+
+    def __init__(self, N, inverse=False):
+        super().__init__(N, inverse)
+        self.register_buffer("state", torch.tensor(True))
+        
+        self.s1_reparam = NonNegativeParametrizer()
+        s1 = torch.ones_like(self.beta)
+        s1 = self.s1_reparam.init(s1)
+        self.s1 = nn.Parameter(s1)
+        
+        self.s2_reparam = NonNegativeParametrizer()
+        s2 = torch.zeros_like(self.beta)
+        s2 = self.s2_reparam.init(s2)
+        self.s2 = nn.Parameter(s2)
+        
+            
+    def forward(self, x: Tensor) -> Tensor:
+        
+        _, C, _, _ = x.size()
+        
+        beta = self.beta_reparam(self.beta)
+        gamma = self.gamma_reparam(self.gamma)
+        gamma = gamma.reshape(C, C, 1, 1)
+        # if not self.inverse and self.state:
+        #         self.s1.data.copy_(torch.rsqrt(beta))
+        #         self.state = torch.tensor(False)
+        s1 = self.s1.reshape(1, C, 1, 1)
+        s2 = self.s2.reshape(1, C, 1, 1)
+        # beta = beta.reshape(1, -1, 1, 1) #
+        
+        norm = F.conv2d(x**2, gamma, beta) # x**4?
+        # norm = F.conv2d(torch.abs(x), gamma, beta)
+        
+        if self.inverse:
+            out = x * torch.sqrt(norm)
+        else:
+            sign = torch.sign(x)
+            out = s1 * sign * torch.sqrt(torch.abs(x) + 1e-20) - s2 * sign * norm
+
+        return out
+
+class GDN_v11_plus(GDN): ##
+
+    def __init__(self, N, inverse=False):
+        super().__init__(N, inverse)
+        self.register_buffer("state", torch.tensor(True))
+        
+        self.s1_reparam = NonNegativeParametrizer()
+        s1 = torch.ones_like(self.beta)
+        s1 = self.s1_reparam.init(s1)
+        self.s1 = nn.Parameter(s1)
+        
+        self.s2_reparam = NonNegativeParametrizer()
+        s2 = torch.zeros_like(self.beta)
+        s2 = self.s2_reparam.init(s2)
+        self.s2 = nn.Parameter(s2)
+        
+            
+    def forward(self, x: Tensor) -> Tensor:
+        
+        _, C, _, _ = x.size()
+        
+        beta = self.beta_reparam(self.beta)
+        gamma = self.gamma_reparam(self.gamma)
+        gamma = gamma.reshape(C, C, 1, 1)
+        # if not self.inverse and self.state:
+        #         self.s1.data.copy_(torch.rsqrt(beta))
+        #         self.state = torch.tensor(False)
+        s1 = self.s1.reshape(1, C, 1, 1)
+        s2 = self.s2.reshape(1, C, 1, 1)
+        # beta = beta.reshape(1, -1, 1, 1) #
+        
+        norm = F.conv2d(x**2, gamma, beta) # x**4?
+        # norm = F.conv2d(torch.abs(x), gamma, beta)
+        
+        if self.inverse:
+            out = x * torch.sqrt(norm)
+        else:
+            sign = torch.sign(x)
+            out = s1 * sign * torch.sqrt(torch.abs(x) + 1e-20) + s2 * sign * norm
+
+        return out
+
+class GDN_v12(GDN):
+
+    def __init__(self, N, inverse=False):
+        super().__init__(N, inverse)
+        self.register_buffer("state", torch.tensor(True))
+            
+    def forward(self, x: Tensor) -> Tensor:
+        
+        _, C, _, _ = x.size()
+        
+        beta = self.beta_reparam(self.beta)
+        gamma = self.gamma_reparam(self.gamma)
+        gamma = gamma.reshape(C, C, 1, 1)
+        # if not self.inverse and self.state:
+        #         self.s1.data.copy_(torch.rsqrt(beta))
+        #         self.state = torch.tensor(False)
+        # beta = beta.reshape(1, -1, 1, 1) #
+        
+        # norm = F.conv2d(x**2, gamma, beta) # x**4?
+        norm = F.conv2d(torch.abs(x), gamma, beta)
+        
+        if self.inverse:
+            out = norm / x + x
+        else:
+            out = x * norm + x
+
+        return out
+
+class GDN_v13(GDN):
+
+    def __init__(self, N, inverse=False):
+        super().__init__(N, inverse)
+        self.register_buffer("state", torch.tensor(True))
+        
+        self.s1_reparam = NonNegativeParametrizer()
+        s1 = torch.ones_like(self.beta)
+        s1 = self.s1_reparam.init(s1)
+        self.s1 = nn.Parameter(s1)
+        
+        self.s2_reparam = NonNegativeParametrizer()
+        s2 = torch.zeros_like(self.beta)
+        s2 = self.s2_reparam.init(s2)
+        self.s2 = nn.Parameter(s2)
+        
+            
+    def forward(self, x: Tensor) -> Tensor:
+        
+        _, C, _, _ = x.size()
+        
+        beta = self.beta_reparam(self.beta)
+        gamma = self.gamma_reparam(self.gamma)
+        gamma = gamma.reshape(C, C, 1, 1)
+        # if not self.inverse and self.state:
+        #         self.s1.data.copy_(torch.rsqrt(beta))
+        #         self.state = torch.tensor(False)
+        s1 = self.s1.reshape(1, C, 1, 1)
+        s2 = self.s2.reshape(1, C, 1, 1)
+        # beta = beta.reshape(1, -1, 1, 1) #
+        
+        norm = F.conv2d(x**2, gamma, beta) # x**4?
+        # norm = F.conv2d(torch.abs(x), gamma, beta)
+        
+        if self.inverse:
+            out = x * torch.sqrt(norm)
+        else:
+            sign = torch.sign(x)
+            out = s1 * sign * torch.log2(torch.abs(x) + 1 + 1e-20) - s2 * sign * norm
+
+        return out
+
+class GDN_v13_plus(GDN):
+
+    def __init__(self, N, inverse=False):
+        super().__init__(N, inverse)
+        self.register_buffer("state", torch.tensor(True))
+        
+        self.s1_reparam = NonNegativeParametrizer()
+        s1 = torch.ones_like(self.beta)
+        s1 = self.s1_reparam.init(s1)
+        self.s1 = nn.Parameter(s1)
+        
+        self.s2_reparam = NonNegativeParametrizer()
+        s2 = torch.zeros_like(self.beta)
+        s2 = self.s2_reparam.init(s2)
+        self.s2 = nn.Parameter(s2)
+        
+            
+    def forward(self, x: Tensor) -> Tensor:
+        
+        _, C, _, _ = x.size()
+        
+        beta = self.beta_reparam(self.beta)
+        gamma = self.gamma_reparam(self.gamma)
+        gamma = gamma.reshape(C, C, 1, 1)
+        # if not self.inverse and self.state:
+        #         self.s1.data.copy_(torch.rsqrt(beta))
+        #         self.state = torch.tensor(False)
+        s1 = self.s1.reshape(1, C, 1, 1)
+        s2 = self.s2.reshape(1, C, 1, 1)
+        # beta = beta.reshape(1, -1, 1, 1) #
+        
+        norm = F.conv2d(x**2, gamma, beta) # x**4?
+        # norm = F.conv2d(torch.abs(x), gamma, beta)
+        
+        if self.inverse:
+            out = x * torch.sqrt(norm)
+        else:
+            sign = torch.sign(x)
+            out = s1 * sign * torch.log2(torch.abs(x) + 1 + 1e-20) + s2 * sign * norm
+
+        return out
+    
+class GDN_v14(GDN): ##
+
+    def __init__(self, N, inverse=False):
+        super().__init__(N, inverse)
+        self.register_buffer("state", torch.tensor(True))
+        
+        self.s1_reparam = NonNegativeParametrizer()
+        s1 = torch.ones_like(self.beta)
+        s1 = self.s1_reparam.init(s1)
+        self.s1 = nn.Parameter(s1)
+        
+        self.s2_reparam = NonNegativeParametrizer()
+        s2 = 0.5 * torch.ones_like(self.beta)
+        s2 = self.s2_reparam.init(s2)
+        self.s2 = nn.Parameter(s2)
+        
+            
+    def forward(self, x: Tensor) -> Tensor:
+        
+        _, C, _, _ = x.size()
+        
+        beta = self.beta_reparam(self.beta)
+        gamma = self.gamma_reparam(self.gamma)
+        gamma = gamma.reshape(C, C, 1, 1)
+        # if not self.inverse and self.state:
+        #         self.s1.data.copy_(torch.rsqrt(beta))
+        #         self.state = torch.tensor(False)
+        s1 = self.s1.reshape(1, C, 1, 1)
+        s2 = self.s2.reshape(1, C, 1, 1)
+        # beta = beta.reshape(1, -1, 1, 1) #
+        
+        norm = F.conv2d(x**2, gamma, beta) # x**4?
+        # norm = F.conv2d(torch.abs(x), gamma, beta)
+        
+        if self.inverse:
+            out = x * torch.sqrt(norm)
+        else:
+            sign = torch.sign(x)
+            out = s1 * sign * torch.log2(torch.abs(x) + 1 + 1e-20) - s2 * x * torch.log2(norm + 1e-20)
+
+        return out
+
+class GDN_v15(GDN):
+
+    def __init__(self, N, inverse=False):
+        super().__init__(N, inverse)
+        self.register_buffer("state", torch.tensor(True))
+        
+        self.s1_reparam = NonNegativeParametrizer()
+        s1 = torch.ones_like(self.beta)
+        s1 = self.s1_reparam.init(s1)
+        self.s1 = nn.Parameter(s1)
+        
+        self.s2_reparam = NonNegativeParametrizer()
+        s2 = 0.005 * torch.ones_like(self.beta)
+        s2 = self.s2_reparam.init(s2)
+        self.s2 = nn.Parameter(s2)
+        
+            
+    def forward(self, x: Tensor) -> Tensor:
+        
+        _, C, _, _ = x.size()
+        
+        beta = self.beta_reparam(self.beta)
+        gamma = self.gamma_reparam(self.gamma)
+        gamma = gamma.reshape(C, C, 1, 1)
+        # if not self.inverse and self.state:
+        #         self.s1.data.copy_(torch.rsqrt(beta))
+        #         self.state = torch.tensor(False)
+        s1 = self.s1.reshape(1, C, 1, 1)
+        s2 = self.s2.reshape(1, C, 1, 1)
+        # beta = beta.reshape(1, -1, 1, 1) #
+        
+        norm = F.conv2d(x**2, gamma, beta) # x**4?
+        # norm = F.conv2d(torch.abs(x), gamma, beta)
+        
+        if self.inverse:
+            out = x * torch.sqrt(norm)
+        else:
+            # out = x - torch.sign(x) * norm
+            out = s1 * x * torch.log2(torch.abs(x) + 1 + 1e-20)  - s2 * torch.sign(x) * norm
+            # out = s1 * x - s2 * x * norm
+
+        return out
+
+class GDN_v16(GDN): ##
+
+    def __init__(self, N, inverse=False):
+        super().__init__(N, inverse)
+        self.register_buffer("state", torch.tensor(True))
+        
+        self.s1_reparam = NonNegativeParametrizer()
+        s1 = torch.ones_like(self.beta)
+        s1 = self.s1_reparam.init(s1)
+        self.s1 = nn.Parameter(s1)
+        
+        self.s2_reparam = NonNegativeParametrizer()
+        s2 = 0.005 * torch.ones_like(self.beta)
+        s2 = self.s2_reparam.init(s2)
+        self.s2 = nn.Parameter(s2)
+        
+            
+    def forward(self, x: Tensor) -> Tensor:
+        
+        _, C, _, _ = x.size()
+        
+        beta = self.beta_reparam(self.beta)
+        gamma = self.gamma_reparam(self.gamma)
+        gamma = gamma.reshape(C, C, 1, 1)
+        # if not self.inverse and self.state:
+        #         self.s1.data.copy_(torch.rsqrt(beta))
+        #         self.state = torch.tensor(False)
+        s1 = self.s1.reshape(1, C, 1, 1)
+        s2 = self.s2.reshape(1, C, 1, 1)
+        # beta = beta.reshape(1, -1, 1, 1) #
+        
+        norm = F.conv2d(x**2, gamma, beta) # x**4?
+        # norm = F.conv2d(torch.abs(x), gamma, beta)
+        
+        if self.inverse:
+            out = x * torch.sqrt(norm)
+        else:
+            # out = x - torch.sign(x) * norm
+            out = s1 * x * torch.sqrt(torch.abs(x) + 1e-20)  - s2 * torch.sign(x) * norm
+            # out = s1 * x - s2 * x * norm
 
         return out
     
@@ -492,6 +973,18 @@ class roundSTE(torch.autograd.Function):
     @staticmethod
     def forward(ctx, input):
         input = torch.round(input)
+        return input
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        # Straight-through estimator
+        # print("roundSTE_grad: ", grad_output)
+        return grad_output, None, None, None
+    
+class signSTE(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, input):
+        input = torch.sign(input)
         return input
 
     @staticmethod

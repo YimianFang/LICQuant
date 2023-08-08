@@ -15,7 +15,7 @@ from torchvision import transforms
 
 from compressai.datasets import ImageFolder
 
-from LSQPlus_yMSE.LSQPlus_yMSE_model import LSQPlusScaleHyperprior
+from LSQPlus_yMSE_model import LSQPlusScaleHyperprior
 from compressai.zoo import models
 
 class RateDistortionLoss(nn.Module):

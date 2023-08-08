@@ -33,38 +33,38 @@ class LSQPlusScaleHyperprior(CompressionModel):
 
         self.g_a = nn.Sequential(
             LSQPlusConv2d(fpmodel.g_a[0], signed=True),
-            GDN_v7(N), # GDN保留
+            GDN_v9_STE(N), # GDN保留
             LSQPlusConv2d(fpmodel.g_a[2], signed=True),
-            GDN_v7(N),
+            GDN_v9_STE(N),
             LSQPlusConv2d(fpmodel.g_a[4], signed=True),
-            GDN_v7(N),
+            GDN_v9_STE(N),
             LSQPlusConv2d(fpmodel.g_a[6], signed=True),
         )
 
-        self.g_a_fp = copy.deepcopy(fpmodel.g_a)  # 1
+        # self.g_a_fp = copy.deepcopy(fpmodel.g_a)  # 1
         
-        # self.g_a_fp = nn.Sequential(   # 2
-        #     conv(3, N),
-        #     GDN(N),
-        #     conv(N, N),
-        #     GDN(N),
-        #     conv(N, N),
-        #     GDN(N),
-        #     conv(N, M),
-        # )
+        self.g_a_fp = nn.Sequential(   # 2
+            conv(3, N),
+            GDN(N),
+            conv(N, N),
+            GDN(N),
+            conv(N, N),
+            GDN(N),
+            conv(N, M),
+        )
         
-        # self.g_a_fp[0].weight = fpmodel.g_a[0].weight
-        # self.g_a_fp[2].weight = fpmodel.g_a[2].weight
-        # self.g_a_fp[4].weight = fpmodel.g_a[4].weight
-        # self.g_a_fp[6].weight = fpmodel.g_a[6].weight
+        self.g_a_fp[0].weight = fpmodel.g_a[0].weight
+        self.g_a_fp[2].weight = fpmodel.g_a[2].weight
+        self.g_a_fp[4].weight = fpmodel.g_a[4].weight
+        self.g_a_fp[6].weight = fpmodel.g_a[6].weight
 
         self.g_s = nn.Sequential(
             LSQPlusConvTranspose2d(fpmodel.g_s[0], signed=True),
-            GDN_v7(N, inverse=True),
+            GDN_v9_STE(N, inverse=True),
             LSQPlusConvTranspose2d(fpmodel.g_s[2], signed=True),
-            GDN_v7(N, inverse=True),
+            GDN_v9_STE(N, inverse=True),
             LSQPlusConvTranspose2d(fpmodel.g_s[4], signed=True),
-            GDN_v7(N, inverse=True),
+            GDN_v9_STE(N, inverse=True),
             LSQPlusConvTranspose2d(fpmodel.g_s[6], signed=True),
         )
 
